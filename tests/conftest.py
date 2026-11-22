@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner, Result
 
 from compose.cli.app import app
+from compose.core.db import Database, open_database
+from compose.core.home import Home, ensure_home
 
 
 @pytest.fixture(autouse=True)
@@ -62,3 +64,15 @@ def cli() -> Callable[..., Result]:
         return runner.invoke(app, list(args))
 
     return invoke
+
+
+@pytest.fixture
+def home(compose_home: Path) -> Home:
+    return ensure_home()
+
+
+@pytest.fixture
+def db(home: Home) -> Iterator[Database]:
+    database = open_database(home)
+    yield database
+    database.close()
