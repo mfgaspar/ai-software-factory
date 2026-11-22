@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from compose import __version__
-from compose.cli import feature, repo, workflow
+from compose.cli import feature, repo, setup, workflow
 
 app = typer.Typer(
     name="compose",
@@ -16,6 +16,8 @@ app = typer.Typer(
 app.add_typer(repo.app, name="repo")
 app.add_typer(feature.app, name="feature")
 app.add_typer(workflow.app, name="workflow")
+app.command("init")(setup.init)
+app.command("check")(setup.check)
 
 
 def _version_callback(value: bool) -> None:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import sys
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import asdict, dataclass, field
@@ -161,12 +163,17 @@ class RunContext:
         return self.state.workflow_dir or str(self.files.dir)
 
     def env(self) -> dict[str, str]:
-        return {
+        env = {
             "COMPOSE_RUN_ID": self.run.id,
             "COMPOSE_FEATURE": self.feature.name,
             "COMPOSE_REPO": self.repo.name,
             "COMPOSE_WORKFLOW_DIR": self.workflow_dir,
         }
+        # skills call the compose CLI: make sure the one running this run is found first
+        bin_dir = Path(sys.executable).parent
+        if (bin_dir / "compose").exists():
+            env["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+        return env
 
     def expression_context(self, scope: Scope) -> dict[str, Any]:
         constitution = self.worktree / ".compose" / "memory" / "constitution.md"

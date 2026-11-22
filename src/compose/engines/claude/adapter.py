@@ -24,6 +24,8 @@ from compose.engines.registry import EngineError
 DEFAULT_PERMISSION_MODE: PermissionMode = "acceptEdits"
 DEFAULT_SETTING_SOURCES: list[SettingSource] = ["project"]
 STOP_TIMEOUT_SECONDS = 10.0
+# compose's skills locate features through the compose CLI; headless runs can't ask
+ALWAYS_ALLOWED = ["Bash(compose:*)"]
 
 # engine_options a workflow may set for Claude Code (workflow, step or hook level)
 ENGINE_OPTIONS = {
@@ -51,6 +53,10 @@ def _list(value: Any, name: str) -> list[str]:
     raise EngineError(f"engine_options.{name} must be a list of strings")
 
 
+def _merge(first: list[str], second: list[str]) -> list[str]:
+    return list(dict.fromkeys([*first, *second]))
+
+
 def build_options(cwd: Path, options: EngineOptions) -> ClaudeAgentOptions:
     extra = dict(options.engine_options)
     unknown = sorted(set(extra) - set(ENGINE_OPTIONS))
@@ -74,7 +80,9 @@ def build_options(cwd: Path, options: EngineOptions) -> ClaudeAgentOptions:
         max_turns=options.max_turns,
         max_budget_usd=options.max_cost_usd,
         permission_mode=cast(PermissionMode, mode),
-        allowed_tools=_list(extra.get("allowed_tools", []), "allowed_tools"),
+        allowed_tools=_merge(
+            ALWAYS_ALLOWED, _list(extra.get("allowed_tools", []), "allowed_tools")
+        ),
         disallowed_tools=_list(extra.get("disallowed_tools", []), "disallowed_tools"),
         setting_sources=cast(list[SettingSource], sources),
         add_dirs=list(_list(extra.get("add_dirs", []), "add_dirs")),

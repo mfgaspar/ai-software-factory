@@ -181,7 +181,7 @@ def test_build_options(tmp_path: Path) -> None:
         ),
     )
     assert custom.permission_mode == "bypassPermissions"
-    assert custom.allowed_tools == ["Bash(npm test)", "Read"]
+    assert custom.allowed_tools == ["Bash(compose:*)", "Bash(npm test)", "Read"]
     assert custom.disallowed_tools == ["WebFetch"]
     assert custom.setting_sources == ["user", "project"]
 

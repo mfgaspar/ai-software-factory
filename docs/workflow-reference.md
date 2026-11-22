@@ -442,7 +442,7 @@ For Claude Code (`engine: claude`):
 | `engine_options` key | Default | Meaning |
 |---|---|---|
 | `permission_mode` | `acceptEdits` | `default`, `acceptEdits`, `plan`, `bypassPermissions`, `dontAsk` or `auto` |
-| `allowed_tools` | none | tools allowed without asking, e.g. `["Bash(npm test)"]` |
+| `allowed_tools` | `compose` CLI only | tools allowed without asking, e.g. `["Bash(npm test)"]`; added to `Bash(compose:*)`, which compose's skills need |
 | `disallowed_tools` | none | tools never allowed |
 | `setting_sources` | `[project]` | which Claude Code settings to load: `user`, `project`, `local` |
 | `add_dirs` | none | extra directories Claude Code may access |

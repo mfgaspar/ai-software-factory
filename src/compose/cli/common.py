@@ -15,6 +15,7 @@ from compose.core.config import ConfigError
 from compose.core.db import Database, open_database
 from compose.core.home import Home, ensure_home
 from compose.core.locks import LockHeld
+from compose.engines.registry import EngineError
 from compose.repos.features import FeatureError
 from compose.repos.git import GitError
 from compose.repos.registry import RepoError
@@ -26,6 +27,7 @@ err_console = Console(stderr=True)
 
 USER_ERRORS: tuple[type[Exception], ...] = (
     ConfigError,
+    EngineError,
     FeatureError,
     GitError,
     LockHeld,
