@@ -21,6 +21,7 @@ SKILL_FILES = {
     "compose-plan": "plan.md",
     "compose-tasks": "tasks.md",
     "compose-analyze": None,  # reports only
+    "compose-converge": None,  # nothing missing: leaves tasks.md alone
     "compose-implement": "src/feature.py",
 }
 
@@ -62,6 +63,7 @@ async def test_quick(builtin: Env) -> None:
         "compose-plan",
         "compose-tasks",
         "compose-implement",
+        "compose-converge",
     ]
     specify_task = builtin.fake.calls[0][0]
     assert specify_task.args == "Add a greeting page"
@@ -74,9 +76,69 @@ async def test_quick(builtin: Env) -> None:
         assert row.files_changed == 1 and row.cost_usd == pytest.approx(0.01), step
 
     # implement gets no extra tools unless asked
-    implement_options = builtin.fake.calls[-1][2]
+    implement_options = builtin.fake.calls[3][2]
     assert implement_options.engine_options == {"allowed_tools": [""]}
     assert build_options(worktree, implement_options).allowed_tools == ALWAYS_ALLOWED
+
+
+def converging(gaps: int) -> object:
+    """converge appends one open task for its first ``gaps`` rounds; implement checks
+    every open task off."""
+    rounds: list[int] = []
+
+    def script(task: EngineTask, cwd: Path, options: EngineOptions) -> Script:
+        tasks = f"specs/{options.env['COMPOSE_FEATURE']}/tasks.md"
+        text = (cwd / tasks).read_text() if (cwd / tasks).exists() else ""
+        if task.text == "compose-converge":
+            rounds.append(1)
+            if len(rounds) > gaps:
+                return Script([Act(say="CONVERGED: the code meets the spec, plan and tasks.")])
+            line = (
+                f"\n## Phase {len(rounds) + 1}: Convergence\n- [ ] T9{len(rounds)} Gap (missing)\n"
+            )
+            return Script(edit(tasks, text + line))
+        if task.text == "compose-implement" and "- [ ]" in text:
+            return Script(edit(tasks, text.replace("- [ ]", "- [x]")))
+        return skills(task, cwd, options)
+
+    script.rounds = rounds  # type: ignore[attr-defined]
+    return script
+
+
+async def test_quick_converges_remaining_work(builtin: Env) -> None:
+    builtin.fake.scripts = converging(gaps=1)  # type: ignore[assignment]
+    run = await builtin.runner().start(builtin.repo, workflow("quick"), {"spec": "Add login"})
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert called(builtin)[3:] == [
+        "compose-implement",
+        "compose-converge",
+        "compose-implement",
+        "compose-converge",
+    ]
+    gaps = builtin.exec_of(run, "implement-gaps")
+    assert len(gaps) == 1 and gaps[0].files_changed == 1
+    tasks = builtin.worktree(run) / "specs" / "001-add-login" / "tasks.md"
+    assert "- [x] T91 Gap (missing)" in tasks.read_text()
+    assert [r.output and r.output["exit_code"] for r in builtin.exec_of(run, "open-tasks")] == [
+        0,
+        1,
+    ]
+
+
+async def test_converge_stops_after_three_rounds(builtin: Env) -> None:
+    script = converging(gaps=10)
+    builtin.fake.scripts = script  # type: ignore[assignment]
+    run = await builtin.runner().start(builtin.repo, workflow("quick"), {"spec": "Add login"})
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert len(script.rounds) == 3  # type: ignore[attr-defined]
+    assert len(builtin.exec_of(run, "implement-gaps")) == 3
+
+
+async def test_converge_can_be_turned_off(builtin: Env) -> None:
+    inputs = {"spec": "Add login", "converge": "false"}
+    run = await builtin.runner().start(builtin.repo, workflow("quick"), inputs)
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert called(builtin)[-1] == "compose-implement"
 
 
 async def test_quick_allowed_tools(builtin: Env) -> None:
@@ -109,6 +171,7 @@ async def test_full_cycle_pauses_at_both_reviews(builtin: Env) -> None:
         "compose-tasks",
         "compose-analyze",
         "compose-implement",
+        "compose-converge",
     ]
     (constitution,) = builtin.exec_of(run, "constitution")
     assert constitution.status.value == "completed"
@@ -138,6 +201,7 @@ async def test_full_cycle_with_answers_clarify_and_constitution(
         "compose-tasks",
         "compose-analyze",
         "compose-implement",
+        "compose-converge",
     ]
     assert builtin.exec_of(run, "constitution") == []
     spec = builtin.worktree(run) / "specs" / "001-dark-mode" / "spec.md"

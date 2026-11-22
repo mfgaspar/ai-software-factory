@@ -12,7 +12,7 @@ The user's request:
 $ARGUMENTS
 ```
 
-compose runs multi-step development workflows (specify → plan → tasks → implement, …) on
+compose runs multi-step development workflows (specify → plan → tasks → implement → converge, …) on
 Claude Code in a separate worktree per feature, and records every step's actions, cost and
 file changes. You drive it through the `compose` CLI. Always pass `--json` when you need to
 read results, and summarize them for the user in plain language instead of pasting JSON.

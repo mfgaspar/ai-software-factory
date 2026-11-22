@@ -41,4 +41,5 @@ working tree.
 ## Report
 
 Tasks completed (and any left, with reasons), tests run and their result, files changed,
-and anything the user should check by hand.
+and anything the user should check by hand. Suggest `/compose-converge` next, to check the
+code against the spec and list anything still missing.

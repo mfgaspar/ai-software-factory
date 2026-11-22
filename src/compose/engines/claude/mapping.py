@@ -1,4 +1,8 @@
-"""Turn Claude Agent SDK messages into compose engine events and a final result."""
+"""Turn Claude Code output into compose engine events and a final result.
+
+Two sources share one mapping: Claude Agent SDK messages and the JSON lines of
+``claude -p --output-format stream-json``, which carry the same fields.
+"""
 
 from __future__ import annotations
 
@@ -32,14 +36,16 @@ def _int(data: dict[str, Any] | None, key: str) -> int:
     return int(value) if isinstance(value, int | float) else 0
 
 
-def _tool_output(content: str | list[dict[str, Any]] | None) -> str:
+def _tool_output(content: object) -> str:
     if content is None:
         return ""
     if isinstance(content, str):
         return content
+    if not isinstance(content, list):
+        return json.dumps(content, default=str)
     parts: list[str] = []
     for item in content:
-        if item.get("type") == "text":
+        if isinstance(item, dict) and item.get("type") == "text":
             parts.append(str(item.get("text", "")))
         else:
             parts.append(json.dumps(item, default=str))
@@ -82,86 +88,170 @@ class EventMapper:
         )
 
     def map(self, message: object) -> list[EngineEvent]:
+        """Map a Claude Agent SDK message."""
         if isinstance(message, AssistantMessage):
-            return self._assistant(message)
+            blocks: list[dict[str, Any]] = []
+            for block in message.content:
+                if isinstance(block, TextBlock):
+                    blocks.append({"type": "text", "text": block.text})
+                elif isinstance(block, ToolUseBlock):
+                    blocks.append(
+                        {
+                            "type": "tool_use",
+                            "id": block.id,
+                            "name": block.name,
+                            "input": block.input,
+                        }
+                    )
+            return self._assistant(
+                blocks, message.usage, message.message_id, message.model, message.session_id
+            )
         if isinstance(message, UserMessage):
-            return self._user(message)
+            if isinstance(message.content, str):
+                return []
+            return self._tool_results(
+                [
+                    {"tool_use_id": b.tool_use_id, "content": b.content, "is_error": b.is_error}
+                    for b in message.content
+                    if isinstance(b, ToolResultBlock)
+                ]
+            )
         if isinstance(message, ResultMessage):
-            return self._result(message)
+            return self._result(
+                {
+                    "subtype": message.subtype,
+                    "is_error": message.is_error,
+                    "duration_ms": message.duration_ms,
+                    "num_turns": message.num_turns,
+                    "session_id": message.session_id,
+                    "total_cost_usd": message.total_cost_usd,
+                    "usage": message.usage,
+                    "result": message.result,
+                    "modelUsage": message.model_usage,
+                    "errors": message.errors,
+                }
+            )
         return []  # system and stream messages carry nothing compose records
 
-    def _assistant(self, message: AssistantMessage) -> list[EngineEvent]:
+    def map_json(self, line: dict[str, Any]) -> list[EngineEvent]:
+        """Map one line of ``claude -p --output-format stream-json --verbose``."""
+        kind = line.get("type")
+        if kind == "system" and line.get("subtype") == "init":
+            self.model = line.get("model") or self.model
+            self.session_id = line.get("session_id") or self.session_id
+            return []
+        message = line.get("message")
+        if not isinstance(message, dict):
+            return self._result(line) if kind == "result" else []
+        content = message.get("content")
+        if kind == "assistant" and isinstance(content, list):
+            return self._assistant(
+                [b for b in content if isinstance(b, dict)],
+                message.get("usage"),
+                message.get("id"),
+                message.get("model"),
+                line.get("session_id"),
+            )
+        if kind == "user" and isinstance(content, list):
+            return self._tool_results(
+                [b for b in content if isinstance(b, dict) and b.get("type") == "tool_result"]
+            )
+        return []
+
+    def _assistant(
+        self,
+        blocks: list[dict[str, Any]],
+        usage: dict[str, Any] | None,
+        message_id: str | None,
+        model: str | None,
+        session_id: str | None,
+    ) -> list[EngineEvent]:
         events: list[EngineEvent] = []
-        self.model = message.model or self.model
-        self.session_id = message.session_id or self.session_id
-        for block in message.content:
-            if isinstance(block, TextBlock) and block.text.strip():
-                self.last_text = block.text
-                events.append(MessageEvent(block.text))
-            elif isinstance(block, ToolUseBlock):
-                self._started[block.id] = self.clock()
-                events.append(ToolCallEvent(block.id, block.name, dict(block.input)))
-        if message.usage is not None:
-            key = message.message_id or f"anon-{len(self._usage)}"
+        self.model = model or self.model
+        self.session_id = session_id or self.session_id
+        for block in blocks:
+            if block.get("type") == "text":
+                text = str(block.get("text") or "")
+                if text.strip():
+                    self.last_text = text
+                    events.append(MessageEvent(text))
+            elif block.get("type") == "tool_use":
+                call_id = str(block.get("id", ""))
+                tool_input = block.get("input")
+                self._started[call_id] = self.clock()
+                events.append(
+                    ToolCallEvent(
+                        call_id,
+                        str(block.get("name", "")),
+                        dict(tool_input) if isinstance(tool_input, dict) else {},
+                    )
+                )
+        if usage is not None:
+            key = message_id or f"anon-{len(self._usage)}"
             self._usage[key] = _MessageUsage(
-                input_tokens=_int(message.usage, "input_tokens"),
-                output_tokens=_int(message.usage, "output_tokens"),
-                cache_read_tokens=_int(message.usage, "cache_read_input_tokens"),
-                cache_write_tokens=_int(message.usage, "cache_creation_input_tokens"),
+                input_tokens=_int(usage, "input_tokens"),
+                output_tokens=_int(usage, "output_tokens"),
+                cache_read_tokens=_int(usage, "cache_read_input_tokens"),
+                cache_write_tokens=_int(usage, "cache_creation_input_tokens"),
             )
             events.append(UsageEvent(self.usage()))
         return events
 
-    def _user(self, message: UserMessage) -> list[EngineEvent]:
-        if isinstance(message.content, str):
-            return []
+    def _tool_results(self, blocks: list[dict[str, Any]]) -> list[EngineEvent]:
         events: list[EngineEvent] = []
-        for block in message.content:
-            if isinstance(block, ToolResultBlock):
-                started = self._started.pop(block.tool_use_id, None)
-                duration = None if started is None else int((self.clock() - started) * 1000)
-                events.append(
-                    ToolResultEvent(
-                        block.tool_use_id,
-                        _tool_output(block.content),
-                        is_error=bool(block.is_error),
-                        duration_ms=duration,
-                    )
+        for block in blocks:
+            call_id = str(block.get("tool_use_id", ""))
+            started = self._started.pop(call_id, None)
+            duration = None if started is None else int((self.clock() - started) * 1000)
+            events.append(
+                ToolResultEvent(
+                    call_id,
+                    _tool_output(block.get("content")),
+                    is_error=bool(block.get("is_error")),
+                    duration_ms=duration,
                 )
+            )
         return events
 
-    def _result(self, message: ResultMessage) -> list[EngineEvent]:
+    def _result(self, data: dict[str, Any]) -> list[EngineEvent]:
         """The result's figures are authoritative (they include subagents and retries)."""
-        data = message.usage or {}
+        raw = data.get("usage")
         totals = self.usage()
-        if data:
+        if isinstance(raw, dict) and raw:
             totals = Usage(
-                input_tokens=_int(data, "input_tokens"),
-                output_tokens=_int(data, "output_tokens"),
-                cache_read_tokens=_int(data, "cache_read_input_tokens"),
-                cache_write_tokens=_int(data, "cache_creation_input_tokens"),
+                input_tokens=_int(raw, "input_tokens"),
+                output_tokens=_int(raw, "output_tokens"),
+                cache_read_tokens=_int(raw, "cache_read_input_tokens"),
+                cache_write_tokens=_int(raw, "cache_creation_input_tokens"),
             )
+        turns = data.get("num_turns")
         usage = Usage(
             input_tokens=totals.input_tokens,
             output_tokens=totals.output_tokens,
             cache_read_tokens=totals.cache_read_tokens,
             cache_write_tokens=totals.cache_write_tokens,
-            cost_usd=float(message.total_cost_usd or 0.0),
-            turns=message.num_turns,
+            cost_usd=float(data.get("total_cost_usd") or 0.0),
+            turns=int(turns) if isinstance(turns, int) else totals.turns,
         )
-        model = next(iter(message.model_usage or {}), None) or self.model
+        model_usage = data.get("modelUsage")
+        model = next(iter(model_usage), None) if isinstance(model_usage, dict) else None
+        subtype = str(data.get("subtype") or "error")
+        is_error = bool(data.get("is_error"))
         error: str | None = None
-        if message.is_error:
-            details = "; ".join(message.errors or []) or message.result or ""
-            error = f"{message.subtype}: {details}" if details else message.subtype
+        if is_error:
+            errors = [str(e) for e in data.get("errors") or []]
+            details = "; ".join(errors) or str(data.get("result") or "")
+            error = f"{subtype}: {details}" if details else subtype
+        result = data.get("result")
+        duration = data.get("duration_ms")
         self.result = EngineResult(
-            status="failed" if message.is_error else "completed",
+            status="failed" if is_error else "completed",
             usage=usage,
-            session_id=message.session_id,
-            final_text=message.result if message.result is not None else self.last_text,
-            duration_ms=message.duration_ms,
+            session_id=data.get("session_id") or self.session_id,
+            final_text=str(result) if result is not None else self.last_text,
+            duration_ms=int(duration) if isinstance(duration, int | float) else 0,
             error=error,
-            model=model,
+            model=model or self.model,
         )
         return [UsageEvent(usage)]
 

@@ -164,6 +164,28 @@ async def test_engine_settings_precedence(env: Env) -> None:
     assert env.fake.calls[1][2].engine_options == {"a": 1, "b": 2}
 
 
+async def test_config_engine_defaults_sit_under_workflow_options(env: Env) -> None:
+    from compose.core.config import Config, DefaultsConfig
+
+    wf = env.workflow(
+        """
+        workflow: {id: cfg, name: C, engine_options: {a: wf}}
+        steps:
+          - {id: one, prompt: "one"}
+          - {id: two, prompt: "two", engine_options: {transport: step}}
+        """
+    )
+    config = Config(
+        defaults=DefaultsConfig(engine="fake"),
+        engines={"fake": {"transport": "cfg", "a": "cfg", "c": 3}, "other": {"x": 1}},
+    )
+    runner = env.runner()
+    runner.config = config
+    await runner.start(env.repo, wf)
+    assert env.fake.calls[0][2].engine_options == {"transport": "cfg", "a": "wf", "c": 3}
+    assert env.fake.calls[1][2].engine_options == {"transport": "step", "a": "wf", "c": 3}
+
+
 async def test_unknown_engine_fails_step(env: Env) -> None:
     wf = env.workflow(
         """

@@ -207,10 +207,12 @@ class RunContext:
 
     def engine_settings(self, step: EngineSettings, scope: Scope | None = None) -> EngineChoice:
         meta = self.definition.workflow
-        defaults = self.runner.config.defaults
-        options = {**meta.engine_options, **step.engine_options}
+        config = self.runner.config
+        defaults = config.defaults
+        engine = step.engine or meta.engine or defaults.engine
+        options = {**config.engines.get(engine, {}), **meta.engine_options, **step.engine_options}
         return EngineChoice(
-            engine=step.engine or meta.engine or defaults.engine,
+            engine=engine,
             model=step.model or meta.model or defaults.model,
             reasoning_effort=step.reasoning_effort or meta.reasoning_effort,
             engine_options={

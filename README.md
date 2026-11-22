@@ -9,6 +9,8 @@ or by hand inside Claude Code with the same skills.
 
 - **Skills** for Claude Code: `/compose-specify`, `/compose-clarify`, `/compose-plan`,
   `/compose-tasks`, `/compose-analyze`, `/compose-checklist`, `/compose-implement`,
+  `/compose-converge`, `/compose-find-skills` (search and install other agent skills, with
+  `npx skills`; adapted from vercel-labs/skills, MIT),
   `/compose-constitution`, and `/compose`, which operates compose itself.
 - **Workflows** chain those skills with shell steps, review gates, loops, branches and
   hooks. Three are built in (`quick`, `full-cycle`, `bugfix`) and you can write your own.
@@ -20,8 +22,10 @@ or by hand inside Claude Code with the same skills.
 ## Install
 
 You need Python 3.11+, [uv](https://docs.astral.sh/uv/), git, and Claude Code signed in
-(`claude auth login`) or `ANTHROPIC_API_KEY` set. The Claude Agent SDK, which compose
-installs, ships its own Claude Code executable.
+(`claude auth login`) or `ANTHROPIC_API_KEY` set. compose runs the `claude` on your PATH
+(`claude -p --output-format stream-json`), or the copy bundled with the Claude Agent SDK
+when there is none. To drive Claude Code through the SDK instead, set
+`engines.claude.transport: sdk` in `~/.compose/config.yml`.
 
 ```bash
 uv tool install /path/to/compose        # a local checkout
@@ -46,7 +50,7 @@ This installs the skills into `.claude/skills/`, the templates into `.compose/te
 a starter constitution into `.compose/memory/constitution.md`, adds compose's local folders
 to `.gitignore` and registers the repo. Commit those files so your team gets the skills.
 
-Run the `quick` workflow (specify → plan → tasks → implement):
+Run the `quick` workflow (specify → plan → tasks → implement → converge):
 
 ```bash
 compose run quick -i spec="Add a CSV export to the reports page" \
@@ -89,6 +93,7 @@ The skills work in Claude Code exactly as they do in a workflow, without trackin
 /compose-plan React frontend, existing Express API
 /compose-tasks
 /compose-implement
+/compose-converge        # appends what is still missing to tasks.md; implement again
 ```
 
 `/compose-specify` creates the numbered branch and `specs/NNN-name/` folder in your current

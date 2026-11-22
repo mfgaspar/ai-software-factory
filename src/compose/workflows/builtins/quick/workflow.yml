@@ -2,8 +2,8 @@ schema_version: "1.0"
 workflow:
   id: quick
   name: Quick spec to code
-  version: 1.1.0
-  description: Specify, plan, break into tasks and implement, with no review gates.
+  version: 1.2.0
+  description: Specify, plan, break into tasks and implement, then converge the code with the spec; no review gates.
 inputs:
   spec:
     type: string
@@ -18,6 +18,12 @@ inputs:
     description: >
       Extra tools implement may use without asking, comma-separated
       (e.g. "Bash(npm test),Bash(npm run lint)"). Needed for it to run your tests.
+  converge:
+    type: boolean
+    default: true
+    description: >
+      After implement, check the code against the spec, plan and tasks and implement
+      what is still missing (up to 3 rounds).
 steps:
   - id: specify
     command: compose-specify
@@ -31,3 +37,30 @@ steps:
     command: compose-implement
     engine_options:
       allowed_tools: ["{{ inputs.allowed_tools | split(',') }}"]
+  - id: converge-check
+    type: if
+    condition: "{{ inputs.converge }}"
+    then:
+      - id: converge-loop
+        type: do-while
+        max_iterations: 3
+        # repeat while tasks.md still has open tasks after converge (and implement)
+        condition: "{{ steps.open-tasks.output.exit_code == 0 }}"
+        steps:
+          - id: converge
+            command: compose-converge
+          - id: open-tasks
+            type: shell
+            run: grep -nE '^[[:space:]]*- \[ \]' "{{ context.feature.dir }}/tasks.md"
+            capture: true
+            continue_on_error: true
+          - id: gaps-check
+            type: if
+            condition: "{{ steps.open-tasks.output.exit_code == 0 }}"
+            then:
+              - id: implement-gaps
+                command: compose-implement
+                input:
+                  args: "the open tasks, starting with the latest Convergence phase"
+                engine_options:
+                  allowed_tools: ["{{ inputs.allowed_tools | split(',') }}"]

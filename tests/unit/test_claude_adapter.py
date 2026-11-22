@@ -253,7 +253,9 @@ def fake_client(monkeypatch: pytest.MonkeyPatch) -> type[FakeClient]:
 
 
 async def test_run_streams_and_disconnects(tmp_path: Path, fake_client: type[FakeClient]) -> None:
-    run = ClaudeEngine().start(EngineTask.skill("compose-plan", "x"), tmp_path, EngineOptions())
+    run = ClaudeEngine("sdk").start(
+        EngineTask.skill("compose-plan", "x"), tmp_path, EngineOptions()
+    )
     kinds = [e.kind async for e in run.events()]
     assert kinds.count("tool_call") == 1 and kinds[-1] == "usage_update"
     assert run.result.status == "completed" and run.result.usage.cost_usd == 0.0123
@@ -262,7 +264,7 @@ async def test_run_streams_and_disconnects(tmp_path: Path, fake_client: type[Fak
 
 async def test_run_reports_sdk_errors(tmp_path: Path, fake_client: type[FakeClient]) -> None:
     fake_client.fail_on_connect = CLIConnectionError("no CLI")
-    run = ClaudeEngine().start(EngineTask.prompt("hi"), tmp_path, EngineOptions())
+    run = ClaudeEngine("sdk").start(EngineTask.prompt("hi"), tmp_path, EngineOptions())
     assert [e async for e in run.events()] == []
     assert run.result.status == "failed"
     assert run.result.error == "CLIConnectionError: no CLI"
@@ -270,7 +272,7 @@ async def test_run_reports_sdk_errors(tmp_path: Path, fake_client: type[FakeClie
 
 async def test_stop_interrupts(tmp_path: Path, fake_client: type[FakeClient]) -> None:
     fake_client.hang = True
-    run = ClaudeEngine().start(EngineTask.prompt("hi"), tmp_path, EngineOptions())
+    run = ClaudeEngine("sdk").start(EngineTask.prompt("hi"), tmp_path, EngineOptions())
     events = run.events()
     first = await events.__anext__()
     assert first.kind == "message"

@@ -1,4 +1,14 @@
-"""The Claude Code engine, driven through the Claude Agent SDK."""
+"""The Claude Code engine.
+
+Two transports run the same skills with the same options and produce the same events:
+``cli`` (the default) runs ``claude -p --output-format stream-json`` as a process;
+``sdk`` drives Claude Code through the Claude Agent SDK. Pick one with
+``engine_options.transport``, or for every run in ``~/.compose/config.yml``::
+
+    engines:
+      claude:
+        transport: sdk
+"""
 
 from __future__ import annotations
 
@@ -16,8 +26,9 @@ from claude_agent_sdk import (
 )
 from claude_agent_sdk.types import EffortLevel, PermissionMode, SettingSource
 
-from compose.engines.base import EngineEvent, EngineOptions, EngineResult, EngineTask
+from compose.engines.base import EngineEvent, EngineOptions, EngineResult, EngineRun, EngineTask
 from compose.engines.claude import install as installer
+from compose.engines.claude.cli import ClaudeCliRun
 from compose.engines.claude.mapping import EventMapper
 from compose.engines.registry import EngineError
 
@@ -28,7 +39,10 @@ STOP_TIMEOUT_SECONDS = 10.0
 ALWAYS_ALLOWED = ["Bash(compose:*)"]
 
 # engine_options a workflow may set for Claude Code (workflow, step or hook level)
+TRANSPORTS = ("cli", "sdk")
+DEFAULT_TRANSPORT = "cli"
 ENGINE_OPTIONS = {
+    "transport": "how compose runs Claude Code: cli (claude -p, default) or sdk",
     "permission_mode": "permission mode: " + ", ".join(get_args(PermissionMode)),
     "allowed_tools": "tools allowed without asking (list)",
     "disallowed_tools": "tools never allowed (list)",
@@ -59,12 +73,20 @@ def _merge(first: list[str], second: list[str]) -> list[str]:
     return list(dict.fromkeys([*first, *second]))
 
 
+def transport(options: EngineOptions, default: str = DEFAULT_TRANSPORT) -> str:
+    value = options.engine_options.get("transport", default)
+    if value not in TRANSPORTS:
+        raise EngineError(f"engine_options.transport: {value!r} (use {' or '.join(TRANSPORTS)})")
+    return str(value)
+
+
 def build_options(cwd: Path, options: EngineOptions) -> ClaudeAgentOptions:
     extra = dict(options.engine_options)
     unknown = sorted(set(extra) - set(ENGINE_OPTIONS))
     if unknown:
         known = ", ".join(sorted(ENGINE_OPTIONS))
         raise EngineError(f"unknown Claude Code engine_options: {', '.join(unknown)} ({known})")
+    transport(options)
     mode = extra.get("permission_mode", DEFAULT_PERMISSION_MODE)
     if mode not in get_args(PermissionMode):
         raise EngineError(f"engine_options.permission_mode: {mode!r} is not a permission mode")
@@ -151,8 +173,14 @@ class ClaudeRun:
 class ClaudeEngine:
     name = "claude"
 
-    def start(self, task: EngineTask, cwd: Path, options: EngineOptions) -> ClaudeRun:
-        return ClaudeRun(prompt_for(task), build_options(cwd, options))
+    def __init__(self, default_transport: str = DEFAULT_TRANSPORT) -> None:
+        self.default_transport = default_transport
+
+    def start(self, task: EngineTask, cwd: Path, options: EngineOptions) -> EngineRun:
+        sdk_options = build_options(cwd, options)
+        if transport(options, self.default_transport) == "sdk":
+            return ClaudeRun(prompt_for(task), sdk_options)
+        return ClaudeCliRun(prompt_for(task), sdk_options)
 
     def install(self, path: Path, *, worktree: bool = False) -> list[Path]:
         return installer.install(path, worktree=worktree)

@@ -19,11 +19,14 @@ WORKFLOW_SKILLS = [
     "compose-checklist",
     "compose-clarify",
     "compose-constitution",
+    "compose-converge",
     "compose-implement",
     "compose-plan",
     "compose-specify",
     "compose-tasks",
 ]
+# shipped skills that work outside workflows and don't touch features
+OTHER_SKILLS = ["compose-find-skills"]
 PLANNED: set[str] = set()
 
 
@@ -60,7 +63,7 @@ def referenced(body: str) -> set[str]:
 
 
 def test_all_skills_are_shipped() -> None:
-    assert [p.name for p in SKILLS] == sorted([*WORKFLOW_SKILLS, "compose"])
+    assert [p.name for p in SKILLS] == sorted([*WORKFLOW_SKILLS, *OTHER_SKILLS, "compose"])
 
 
 @pytest.mark.parametrize("skill", SKILLS, ids=lambda p: p.name)
@@ -91,6 +94,13 @@ def test_skills_use_only_real_cli_commands(skill: Path) -> None:
 def test_workflow_skills_locate_features_through_the_cli(skill: str) -> None:
     _, body = frontmatter(ASSETS / "skills" / skill / "SKILL.md")
     assert "compose feature paths --json" in body or "compose feature new --json" in body
+
+
+def test_adopted_skill_keeps_its_license() -> None:
+    folder = ASSETS / "skills" / "compose-find-skills"
+    license_text = (folder / "LICENSE.txt").read_text()
+    assert "MIT License" in license_text and "Vercel, Inc." in license_text
+    assert "LICENSE.txt" in (folder / "SKILL.md").read_text()
 
 
 def test_no_references_to_the_old_project() -> None:

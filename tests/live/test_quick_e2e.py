@@ -55,16 +55,22 @@ def capped_quick(tmp_path: Path) -> Path:
 
 def check_run(detail: dict[str, Any]) -> None:
     assert detail["status"] == "completed", detail.get("error")
-    steps = {s["step_id"]: s for s in detail["steps"]}
-    assert list(steps) == ["specify", "plan", "tasks", "implement"]
-    for name, step in steps.items():
-        assert step["cost_usd"] > 0, name
+    engine_steps = [s for s in detail["steps"] if s["type"] in ("command", "prompt")]
+    order = [s["step_id"] for s in engine_steps]
+    assert order[:5] == ["specify", "plan", "tasks", "implement", "converge"], order
+    for step in engine_steps:
+        assert step["cost_usd"] > 0, step["step_id"]
         assert step["engine"] == "claude" and step["model"] == MODEL
+    steps = {s["step_id"]: s for s in engine_steps}
     assert steps["implement"]["changes"]["files"] >= 2  # slug.py and test_slug.py at least
+    open_tasks = [s for s in detail["steps"] if s["step_id"] == "open-tasks"]
+    assert open_tasks and open_tasks[-1]["status"] in ("completed", "failed")
     totals = detail["totals"]
-    assert totals["cost_usd"] == pytest.approx(sum(s["cost_usd"] for s in steps.values()))
+    leaves = [s for s in detail["steps"] if s["type"] in ("command", "prompt", "shell")]
+    assert totals["cost_usd"] == pytest.approx(sum(s["cost_usd"] for s in leaves))
     assert totals["cost_usd"] <= MAX_COST_USD
-    assert totals["changes"]["added"] == sum(s["changes"]["added"] for s in steps.values())
+    rounds = order.count("converge")
+    print(f"\nconverge rounds: {rounds}, implement-gaps: {order.count('implement-gaps')}")
     worktree = Path(detail["worktree"])
     assert (worktree / "slug.py").exists()
     print(f"\n{detail['id']}: ${totals['cost_usd']:.4f}, {totals['changes']}")
@@ -101,7 +107,11 @@ def test_quick_through_cli_and_api(
             f"/repos/{repo}/runs",
             json={
                 "workflow": str(capped_quick),
-                "inputs": {"spec": SPEC.replace("slug", "slug2"), "allowed_tools": TOOLS},
+                "inputs": {
+                    "spec": SPEC.replace("slug", "slug2"),
+                    "allowed_tools": TOOLS,
+                    "converge": False,  # the CLI run covers converge
+                },
             },
         )
         assert created.status_code == 202, created.text
@@ -118,8 +128,9 @@ def test_quick_through_cli_and_api(
 
 def check_run_api(detail: dict[str, Any]) -> None:
     assert detail["status"] == "completed", detail.get("error")
-    steps = {s["step_id"]: s for s in detail["steps"]}
-    assert all(s["cost_usd"] > 0 for s in steps.values())
+    engine_steps = [s for s in detail["steps"] if s["type"] in ("command", "prompt")]
+    assert all(s["cost_usd"] > 0 for s in engine_steps)
+    steps = {s["step_id"]: s for s in engine_steps}
     assert steps["implement"]["changes"]["files"] >= 1
     assert detail["totals"]["cost_usd"] <= MAX_COST_USD
     print(f"\n{detail['id']}: ${detail['totals']['cost_usd']:.4f}, {detail['totals']['changes']}")

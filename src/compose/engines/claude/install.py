@@ -95,17 +95,20 @@ def install(path: Path, *, worktree: bool = False, assets: Path = ASSETS) -> lis
 # ------------------------------------------------------------------------ check
 
 
-def cli_path() -> str | None:
-    """The claude executable the SDK will use: its bundled one, else the one on PATH."""
+def bundled_cli() -> str | None:
+    """The claude executable shipped inside the Claude Agent SDK, if any."""
     try:
         import claude_agent_sdk
     except ImportError:
         return None
     name = "claude.exe" if os.name == "nt" else "claude"
     bundled = Path(claude_agent_sdk.__file__).parent / "_bundled" / name
-    if bundled.is_file():
-        return str(bundled)
-    return shutil.which("claude")
+    return str(bundled) if bundled.is_file() else None
+
+
+def cli_path() -> str | None:
+    """The claude executable compose runs: the one on PATH, else the SDK's bundled one."""
+    return shutil.which("claude") or bundled_cli()
 
 
 def check() -> list[str]:

@@ -107,6 +107,9 @@ server:
   host: 127.0.0.1
   port: 8765
   token: null
+engines:                     # default engine_options per engine
+  claude:
+    transport: cli           # cli (claude -p, stream-json) or sdk (Claude Agent SDK)
 ```
 
 Inside a run, steps and hooks see `COMPOSE_RUN_ID`, `COMPOSE_FEATURE`, `COMPOSE_REPO` and

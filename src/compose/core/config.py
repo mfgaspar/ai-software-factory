@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -35,6 +36,8 @@ class DefaultsConfig(_Section):
 class Config(_Section):
     server: ServerConfig = Field(default_factory=ServerConfig)
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
+    # default engine_options per engine, under the workflow's and step's own
+    engines: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 def _format_validation_error(path: Path, err: ValidationError) -> str:

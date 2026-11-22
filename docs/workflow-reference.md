@@ -449,12 +449,27 @@ For Claude Code (`engine: claude`):
 
 | `engine_options` key | Default | Meaning |
 |---|---|---|
+| `transport` | `cli` | `cli` runs `claude -p --output-format stream-json --verbose` with the prompt on stdin and reads its JSON lines; `sdk` drives Claude Code through the Claude Agent SDK. Both record the same trace, tokens and cost |
 | `permission_mode` | `acceptEdits` | `default`, `acceptEdits`, `plan`, `bypassPermissions`, `dontAsk` or `auto` |
 | `allowed_tools` | `compose` CLI only | tools allowed without asking, e.g. `["Bash(npm test)"]`; added to `Bash(compose:*)`, which compose's skills need. Spaces around entries and empty entries are dropped |
 | `disallowed_tools` | none | tools never allowed |
 | `setting_sources` | `[project]` | which Claude Code settings to load: `user`, `project`, `local` |
 | `add_dirs` | none | extra directories Claude Code may access |
-| `cli_path` | bundled CLI | a specific `claude` executable |
+| `cli_path` | `claude` on PATH, else the SDK's bundled one | a specific `claude` executable |
+
+Defaults for every run can go in `~/.compose/config.yml`, under the options of the
+workflow and the step:
+
+```yaml
+engines:
+  claude:
+    transport: sdk
+    cli_path: /opt/claude/bin/claude
+```
+
+With the `cli` transport, the final `result` line gives the step's cost, tokens, turns and
+errors; if the process is stopped before it prints one (abort, timeout), the tokens seen so
+far are kept and the cost is unknown. The `sdk` transport behaves the same way.
 
 `reasoning_effort` is one of `low`, `medium`, `high`, `xhigh`, `max`. A step's
 `max_cost_usd`, or what is left of the run's, is passed to Claude Code as its budget, so
@@ -516,13 +531,22 @@ Run states: `created → running → completed | paused | failed | aborted`.
 
 | id | steps | inputs |
 |---|---|---|
-| `quick` | specify → plan → tasks → implement, no gates | `spec`, `feature_name`, `allowed_tools` |
-| `full-cycle` | constitution (if missing) → specify → clarify (if `clarify`) → spec review gate → plan → plan review gate → tasks → analyze → implement | `spec`, `feature_name`, `clarify`, `review_spec_verdict`, `review_plan_verdict`, `allowed_tools` |
+| `quick` | specify → plan → tasks → implement → converge, no gates | `spec`, `feature_name`, `converge`, `allowed_tools` |
+| `full-cycle` | constitution (if missing) → specify → clarify (if `clarify`) → spec review gate → plan → plan review gate → tasks → analyze → implement → converge | `spec`, `feature_name`, `clarify`, `review_spec_verdict`, `review_plan_verdict`, `converge`, `allowed_tools` |
 | `bugfix` | assess → (fix → test) until the tests pass, at most 3 times → summary | `report`, `test_command`, `feature_name`, `allowed_tools` |
 
 In a background run, implement (and bugfix's fix step) can only run the commands you allow:
 pass them as `-i allowed_tools="Bash(npm test),Bash(npm run lint)"`. Rejecting a review
-gate in `full-cycle` aborts the run. In `bugfix` the tests always run in their own shell
+gate in `full-cycle` aborts the run.
+
+**Converge** (on by default; `-i converge=false` turns it off) runs `/compose-converge`,
+which checks the code against the spec, plan, tasks and constitution and appends what is
+still missing to `tasks.md` as a new `Phase N: Convergence`. While `tasks.md` has open
+tasks, `implement-gaps` runs implement on them and converge checks again, up to 3 rounds.
+Each round's steps (`converge`, `open-tasks`, `implement-gaps`) show separately in
+`compose status`, with their own cost.
+
+In `bugfix` the tests always run in their own shell
 step, and their output is passed to the next fix attempt.
 
 ## Running and reporting
