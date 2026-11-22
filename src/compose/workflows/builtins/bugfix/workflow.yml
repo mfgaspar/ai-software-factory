@@ -1,0 +1,49 @@
+schema_version: "1.0"
+workflow:
+  id: bugfix
+  name: Bug fix
+  version: 1.0.0
+  description: Assess a bug report, then fix and test until the tests pass (up to 3 tries).
+inputs:
+  report:
+    type: string
+    required: true
+    prompt: Describe the bug
+  test_command:
+    type: string
+    required: true
+    prompt: Command that runs the tests
+  feature_name:
+    type: string
+    description: Short name for a new feature (default derived from the report).
+steps:
+  - id: assess
+    prompt: |
+      Investigate this bug report and write your assessment (symptoms, root cause,
+      proposed fix, how to verify) to {{ context.feature.dir }}/bug-assessment.md.
+      Do not change any code yet.
+
+      Bug report:
+      {{ inputs.report }}
+  - id: fix-loop
+    type: do-while
+    max_iterations: 3
+    condition: "{{ steps.test.output.exit_code != 0 }}"
+    steps:
+      - id: fix
+        prompt: |
+          Fix the bug described in {{ context.feature.dir }}/bug-assessment.md.
+          Keep the change minimal and add or update a test that covers it.
+          {{ steps.test.output.stdout | default("") }}
+      - id: test
+        type: shell
+        strict: true
+        env:
+          TEST_COMMAND: "{{ inputs.test_command }}"
+        run: sh -c "$TEST_COMMAND"
+        continue_on_error: true
+  - id: summary
+    prompt: |
+      Summarize the fix in {{ context.feature.dir }}/bug-fix-summary.md: what was wrong,
+      what changed, and the final test result (exit code
+      {{ steps.test.output.exit_code }}).

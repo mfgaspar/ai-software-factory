@@ -19,6 +19,7 @@ from compose.repos.features import FeatureError
 from compose.repos.git import GitError
 from compose.repos.registry import RepoError
 from compose.repos.worktrees import WorktreeError
+from compose.workflows.loader import WorkflowError
 
 console = Console()
 err_console = Console(stderr=True)
@@ -30,6 +31,7 @@ USER_ERRORS: tuple[type[Exception], ...] = (
     LockHeld,
     RepoError,
     WorktreeError,
+    WorkflowError,
 )
 
 P = ParamSpec("P")

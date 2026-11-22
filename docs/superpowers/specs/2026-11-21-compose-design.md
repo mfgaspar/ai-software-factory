@@ -189,8 +189,9 @@ are coerced (booleans accept true/1/yes, false/0/no). Inputs are the only variab
 | `workflow` | Call another workflow; child returns its declared `outputs`. Max depth 16; cycles rejected. |
 
 Common step fields: `id` (required, no `:`), `type`, `engine`, `model`, `reasoning_effort`,
-`timeout`, `continue_on_error`, `capture`, `limits` (`max_cost_usd`, `max_turns`) for engine
-steps.
+`timeout`, `continue_on_error`, `limits` (`max_cost_usd`, `max_turns`) for engine steps;
+`capture` for shell steps. The authoritative, detailed semantics are in
+[docs/workflow-reference.md](../../workflow-reference.md).
 
 Error handling follows spec-kit: a failed step stops the run unless `continue_on_error: true`;
 exit codes are kept in `steps.<id>.output.exit_code` for branching.

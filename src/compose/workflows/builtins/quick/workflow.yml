@@ -1,0 +1,25 @@
+schema_version: "1.0"
+workflow:
+  id: quick
+  name: Quick spec to code
+  version: 1.0.0
+  description: Specify, plan, break into tasks and implement, with no review gates.
+inputs:
+  spec:
+    type: string
+    required: true
+    prompt: Describe the feature
+  feature_name:
+    type: string
+    description: Short name for a new feature (default derived from the spec).
+steps:
+  - id: specify
+    command: compose-specify
+    input:
+      args: "{{ inputs.spec }}"
+  - id: plan
+    command: compose-plan
+  - id: tasks
+    command: compose-tasks
+  - id: implement
+    command: compose-implement
