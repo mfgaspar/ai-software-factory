@@ -5,7 +5,8 @@ from __future__ import annotations
 from compose.core import locks, store
 from compose.core.db import Database, utcnow
 from compose.core.home import Home
-from compose.core.models import ExecStatus, Run, RunStatus, StepExec
+from compose.core.models import ExecStatus, HookExec, Run, RunStatus, StepExec
+from compose.runner.hooks import fold_hook_metrics
 from compose.runner.state import RunFiles
 
 DIED = "the process running this run stopped unexpectedly"
@@ -35,11 +36,19 @@ def recover_stale_runs(db: Database, home: Home) -> list[Run]:
             row.status = ExecStatus.FAILED
             row.error = DIED
             row.ended_at = utcnow()
+            fold_hook_metrics(db, row)
             store.update(db, row)
         run.status = RunStatus.FAILED
         run.error = DIED
         run.ended_at = utcnow()
         store.update(db, run)
+        for hook in store.select(
+            db, HookExec, "run_id = ? AND status = ?", (run.id, ExecStatus.RUNNING.value)
+        ):
+            hook.status = ExecStatus.FAILED
+            hook.error = DIED
+            hook.ended_at = utcnow()
+            store.update(db, hook)
         files = RunFiles(home.run_dir(run.id))
         if files.state.exists():
             state = files.read_state()

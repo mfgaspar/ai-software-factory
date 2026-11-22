@@ -38,3 +38,12 @@ class RunAborted(Exception):
 class LimitExceeded(Exception):
     def __init__(self, message: str) -> None:
         super().__init__(f"limit_exceeded: {message}")
+
+
+class RunHookFailed(StepFailed):
+    """A required ``before_run`` / ``after_run`` hook failed."""
+
+    def __init__(self, error: str) -> None:
+        Exception.__init__(self, error)
+        self.step_id = "run"
+        self.error = error

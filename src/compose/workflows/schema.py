@@ -386,7 +386,7 @@ class HookSpec(EngineSettings):
         return self.description or self.command or self.run or (self.prompt or "")[:60]
 
     def template_strings(self) -> Iterator[tuple[str, str, bool]]:
-        for name in ("args", "prompt", "run"):
+        for name in ("args", "prompt", "run", "prompt_text"):
             value = getattr(self, name)
             if value:
                 yield name, value, False
@@ -403,6 +403,7 @@ def _as_list(value: Any) -> Any:
 HookList = Annotated[list[HookSpec], BeforeValidator(_as_list)]
 
 RUN_EVENTS = ("before_run", "after_run")
+HOOKED_STEP_KINDS = ("command", "prompt", "shell", "gate")
 STEP_EVENTS = ("before_step", "after_step")
 _EVENT_RE = re.compile(r"^(before|after)_(.+)$")
 
@@ -493,6 +494,7 @@ class Workflow(_Model):
             if not re.match(INPUT_NAME_RE, name):
                 errors.append(f"inputs.{name}: invalid input name")
         ids = set(seen)
+        kinds = {step.id: step.kind for _, step, _ in self.iter_steps()}
         for where, step, _ in self.iter_steps():
             gate_input = step.verdict_input if isinstance(step, GateStep) else None
             if gate_input and gate_input not in self.inputs:
@@ -511,6 +513,11 @@ class Workflow(_Model):
                 errors.append(f"hooks.{event}: event must be before_<step-id> or after_<step-id>")
             elif match.group(2) not in ids:
                 errors.append(f"hooks.{event}: no step with id {match.group(2)!r}")
+            elif (kind := kinds[match.group(2)]) not in HOOKED_STEP_KINDS:
+                errors.append(
+                    f"hooks.{event}: {match.group(2)!r} is a step of type {kind!r}; hooks run only "
+                    "around command, prompt, shell and gate steps"
+                )
         errors.extend(self._check_expressions(ids))
         if errors:
             raise ValueError("\n".join(errors))
@@ -541,10 +548,13 @@ class Workflow(_Model):
         for where, step, in_fan_out in self.iter_steps():
             for label, text, bare in step.template_strings():
                 check(f"{where}.{label}", text, bare, in_fan_out, isinstance(step, FanInStep))
+        in_fan_out_ids = {step.id for _, step, inside in self.iter_steps() if inside}
         for event, hooks in self.hooks.items():
+            match = _EVENT_RE.match(event)
+            per_item = bool(match) and match.group(2) in in_fan_out_ids  # type: ignore[union-attr]
             for i, hook in enumerate(hooks):
                 for label, text, bare in hook.template_strings():
-                    check(f"hooks.{event}[{i}].{label}", text, bare, False, False)
+                    check(f"hooks.{event}[{i}].{label}", text, bare, per_item, False)
         for name, out in self.outputs.items():
             check(f"outputs.{name}.value", out.value, False, False, False)
         return errors

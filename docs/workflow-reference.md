@@ -199,7 +199,8 @@ A choice that isn't one of `options` is rejected and the gate stays paused. Choo
 - `skip` — the gate completes with `output.choice == "reject"` and the run continues; use
   an `if` step to branch on it.
 - `retry` — the run pauses at the same gate again (e.g. after someone edits the spec by
-  hand); the next resume decides it anew. A pre-set verdict input is ignored on a retry.
+  hand); the next resume decides it anew. A pre-set verdict input is cleared on a retry,
+  so the next resume must give a new answer.
 
 Any other choice completes the gate with `output.choice` set and the run continues.
 
@@ -378,11 +379,22 @@ Semantics:
   `after_<id>`, then `after_step` (each group sorted by priority).
 - A required `before` hook that fails fails the step without running it. A required
   `after` hook that fails fails the step. `after` hooks run only if the step succeeded.
-- Hooks' actions, cost and file changes are added to the step they surround; traces still
-  show each hook separately.
+- Tracking's end hook runs even when the step or one of its hooks failed, so every step
+  execution gets a record.
+- `after` hooks can read the step they follow as `steps.<id>` (its status and output).
+- A hook whose `condition` is false, or whose `prompt_text` question is answered no, is
+  recorded as `skipped`.
+- Hooks' actions, tokens, cost and file changes are added to the step they surround (so
+  `steps.<id>.cost_usd` includes them); traces still show each hook separately. Hook cost
+  counts toward the run's `max_cost_usd`; step `limits` apply to the step only.
 - Hooks don't run around control-flow steps themselves (`if`, `switch`, loops, `fan-out`,
-  `fan-in`, `workflow`), only around the steps inside them. The exception is the fan-out
-  template step: its hooks run once per item.
+  `fan-in`, `workflow`), only around the steps inside them; `before_<id>` / `after_<id>`
+  naming a control-flow step is a validation error. The exception is the fan-out
+  template step: its hooks run once per item and can use `item`.
+- A required `before_run` hook that fails fails the run before any step runs; a required
+  `after_run` hook that fails fails the run.
+- On resume, hooks that already finished for the same step execution (a gate that paused)
+  or for the run (`before_run`, earlier `after_run` hooks) are not run again.
 
 ## Tracking
 
@@ -461,7 +473,8 @@ Run states: `created → running → completed | paused | failed | aborted`.
   `continue_on_error: true`.
 - A run pauses at a gate with no answer. `compose resume <run>` (optionally with
   `-i name=value`) continues a `paused` or `failed` run: steps that completed are not run
-  again; the failed or paused step starts over.
+  again; the failed or paused step starts over. `--choice <option>` answers the gate
+  that is waiting, even one inside a called workflow.
 - `compose abort <run>` stops a running run between engine events and marks it `aborted`.
 - A run whose process died is marked `failed` the next time compose starts, and can be
   resumed.

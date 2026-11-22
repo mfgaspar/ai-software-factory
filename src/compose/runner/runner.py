@@ -35,12 +35,14 @@ from compose.engines.base import (
 from compose.engines.registry import EngineError, EngineRegistry, default_registry
 from compose.repos import features
 from compose.repos.worktrees import ensure_feature_worktree
+from compose.runner import hooks
 from compose.runner.context import Scope, step_result
 from compose.runner.errors import (
     InputError,
     LimitExceeded,
     RunAborted,
     RunError,
+    RunHookFailed,
     RunPaused,
     StepFailed,
 )
@@ -50,11 +52,10 @@ from compose.runner.steps.base import Outcome
 from compose.workflows import expressions, loader
 from compose.workflows.schema import (
     BaseStep,
-    CommandStep,
+    EngineSettings,
     InputSpec,
     InputType,
     Limits,
-    PromptStep,
     Workflow,
     coerce_input,
 )
@@ -195,7 +196,7 @@ class RunContext:
     def condition(self, text: str, scope: Scope) -> bool:
         return expressions.evaluate_condition(text, self.expression_context(scope))
 
-    def engine_settings(self, step: CommandStep | PromptStep) -> EngineChoice:
+    def engine_settings(self, step: EngineSettings) -> EngineChoice:
         meta = self.definition.workflow
         defaults = self.runner.config.defaults
         return EngineChoice(
@@ -375,11 +376,16 @@ class RunContext:
         self.save_state()
         self.emit("step_started", exec_id=row.id, step_id=step.id, key=key, type=row.step_type)
 
+        plan = (
+            hooks.step_hooks(self.definition, step.id, workflow_hooks=leaf)
+            if leaf or step.kind == "fan-out"
+            else None
+        )
         try:
-            if leaf:
-                outcome = await self.guard(executor(self, step, row, scope), step.timeout)
+            if plan:
+                outcome = await self._with_hooks(step, scope, row, plan, executor, leaf=leaf)
             else:
-                outcome = await executor(self, step, row, scope)
+                outcome = await self._body(step, scope, row, executor, leaf=leaf)
         except RunPaused as paused:
             self._close(row, ExecStatus.PAUSED, error=paused.reason, leaf=leaf)
             self.state.paused_at = key
@@ -392,14 +398,6 @@ class RunContext:
             self._close(row, ExecStatus.FAILED, error=str(failed), leaf=leaf)
             self._forget(key)
             raise
-        except EngineError as exc:
-            outcome = Outcome.failed(str(exc))
-        except LimitExceeded as exc:
-            outcome = Outcome.failed(str(exc))
-        except TimeoutError:
-            outcome = Outcome.failed(f"timeout after {step.timeout}s")
-        except expressions.ExpressionError as exc:
-            outcome = Outcome.failed(f"expression error: {exc}")
         except Exception as exc:  # unexpected: always stops the run
             self._close(row, ExecStatus.FAILED, error=f"internal error: {exc!r}", leaf=leaf)
             self._forget(key)
@@ -420,6 +418,56 @@ class RunContext:
         if is_failure and not step.continue_on_error:
             raise StepFailed(step.id, outcome.error or "failed")
         return result
+
+    async def _body(
+        self, step: BaseStep, scope: Scope, row: StepExec, executor: LeafExecutor, *, leaf: bool
+    ) -> Outcome:
+        """Run the step itself; expected problems become a failed outcome."""
+        try:
+            if leaf:
+                return await self.guard(executor(self, step, row, scope), step.timeout)
+            return await executor(self, step, row, scope)
+        except EngineError as exc:
+            return Outcome.failed(str(exc))
+        except LimitExceeded as exc:
+            return Outcome.failed(str(exc))
+        except TimeoutError:
+            return Outcome.failed(f"timeout after {step.timeout}s")
+        except expressions.ExpressionError as exc:
+            return Outcome.failed(f"expression error: {exc}")
+
+    async def _with_hooks(
+        self,
+        step: BaseStep,
+        scope: Scope,
+        row: StepExec,
+        plan: hooks.StepHooks,
+        executor: LeafExecutor,
+        *,
+        leaf: bool,
+    ) -> Outcome:
+        """before hooks, the step, after hooks (on success), then the final hooks."""
+        # A gate resumed after a pause keeps its row; hooks that already ran are not repeated.
+        done = hooks.completed_keys(self.db, self.run.id, row.id)
+        error = await hooks.run_group(self, plan.before, row, scope, skip=done)
+        if error is not None:
+            outcome = Outcome.failed(error)
+        else:
+            try:
+                outcome = await self._body(step, scope, row, executor, leaf=leaf)
+            except StepFailed:
+                await hooks.run_group(self, plan.final, row, scope, skip=done)
+                raise
+            # after hooks can read the step's own result as steps.<id>
+            self.results[step.id] = step_result(outcome.status, outcome.output, row)
+            if outcome.status is ExecStatus.COMPLETED:
+                error = await hooks.run_group(self, plan.after, row, scope, skip=done)
+                if error is not None:
+                    outcome = Outcome(ExecStatus.FAILED, outcome.output, error, outcome.abort_run)
+        error = await hooks.run_group(self, plan.final, row, scope, skip=done)
+        if error is not None and outcome.status is not ExecStatus.FAILED:
+            outcome = Outcome(ExecStatus.FAILED, outcome.output, error, outcome.abort_run)
+        return outcome
 
     def _forget(self, key: str) -> None:
         """A failed execution: the next resume starts a new attempt."""
@@ -443,9 +491,12 @@ class RunContext:
             if row.started_at is not None:
                 row.duration_ms = int((row.ended_at - row.started_at).total_seconds() * 1000)
         if leaf:
-            self.shared.spent_usd += row.cost_usd
-        else:
+            self.shared.spent_usd += row.cost_usd  # hooks were counted as they finished
+        elif status is not ExecStatus.PAUSED:
             self._roll_up(row)
+        if status is not ExecStatus.PAUSED:
+            # Kept apart while paused so a resumed gate doesn't count its hooks twice.
+            hooks.fold_hook_metrics(self.db, row)
         store.update(self.db, row)
         self.files.write_step_record(row.id, row.model_dump(mode="json"))
         self.emit(
@@ -646,13 +697,20 @@ class Runner:
                 SELECT id FROM runs WHERE id = ?
                 UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id
             )
-            SELECT COALESCE(SUM(cost_usd), 0) FROM step_execs
-            WHERE run_id IN (SELECT id FROM tree)
-              AND step_type IN ('command', 'prompt', 'shell', 'gate')
+            SELECT
+              (SELECT COALESCE(SUM(cost_usd), 0) FROM step_execs
+               WHERE run_id IN (SELECT id FROM tree)
+                 AND step_type IN ('command', 'prompt', 'shell', 'gate')),
+              (SELECT COALESCE(SUM(h.cost_usd), 0)
+               FROM hook_execs h LEFT JOIN step_execs s ON s.id = h.step_exec_id
+               WHERE h.run_id IN (SELECT id FROM tree)
+                 AND (s.id IS NULL OR s.status IN ('paused', 'running')
+                      OR s.step_type NOT IN ('command', 'prompt', 'shell', 'gate')))
             """,
             (root_run_id,),
         ).fetchone()
-        return float(row[0])
+        # Leaf rows already include their hooks once closed; count the rest separately.
+        return float(row[0]) + float(row[1])
 
     async def execute(self, run_id: str) -> Run:
         """Execute (or continue) a root run until it completes, pauses, fails or aborts."""
@@ -730,7 +788,16 @@ class Runner:
     async def _drive(self, rc: RunContext, *, raise_on_stop: bool = False) -> None:
         run, state, files = rc.run, rc.state, rc.files
         try:
+            done = hooks.completed_keys(self.db, run.id, None)
+            before = hooks.run_hooks(rc.definition, "before")
+            error = await hooks.run_group(rc, before, None, Scope(), skip=done)
+            if error is not None:
+                raise RunHookFailed(error)
             await rc.run_steps(rc.definition.steps, Scope())
+            after = hooks.run_hooks(rc.definition, "after")
+            error = await hooks.run_group(rc, after, None, Scope(), skip=done)
+            if error is not None:
+                raise RunHookFailed(error)
             outputs = {
                 name: rc.render(spec.value, Scope()) for name, spec in rc.definition.outputs.items()
             }
