@@ -165,7 +165,16 @@ class BaseStep(_Model):
             value = getattr(self, name)
             if isinstance(value, str):
                 yield name, value, True
+        yield from setting_strings(self)
         yield from option_strings(getattr(self, "engine_options", None))
+
+
+def setting_strings(settings: Any) -> Iterator[tuple[str, str, bool]]:
+    """Expression-bearing ``model`` / ``reasoning_effort`` of an engine step or hook."""
+    for name in ("model", "reasoning_effort"):
+        value = getattr(settings, name, None)
+        if isinstance(value, str) and "{{" in value:
+            yield name, value, False
 
 
 def option_strings(value: Any, label: str = "engine_options") -> Iterator[tuple[str, str, bool]]:
@@ -408,6 +417,7 @@ class HookSpec(EngineSettings):
             yield f"env.{key}", value, False
         if self.condition:
             yield "condition", self.condition, True
+        yield from setting_strings(self)
         yield from option_strings(self.engine_options)
 
 

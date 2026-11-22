@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -216,6 +217,72 @@ async def test_full_cycle_rejected_spec_aborts(builtin: Env) -> None:
     assert "compose-plan" not in called(builtin)
 
 
+async def test_pipeline_is_the_default_workflow(builtin: Env) -> None:
+    created = builtin.runner().create_run(builtin.repo, None, {"spec": "Add a wishlist"})
+    assert created.workflow_id == "pipeline"
+
+
+async def test_pipeline_pauses_at_clarify_then_runs_to_the_end(builtin: Env) -> None:
+    runner = builtin.runner()
+    run = await runner.start(builtin.repo, workflow("pipeline"), {"spec": "Export to CSV"})
+    assert run.status is RunStatus.PAUSED and run.current_step_id == "clarify-gate"
+    assert called(builtin) == ["compose-constitution", "compose-specify", "compose-clarify"]
+
+    run = await runner.resume(run.id, choice="approve")
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert called(builtin)[3:] == [
+        "compose-plan",
+        "compose-tasks",
+        "compose-analyze",
+        "compose-implement",
+        "compose-converge",
+    ]
+    assert builtin.fake.calls[1][0].args == "Export to CSV"
+    # no model inputs: every step falls back to the configured default model
+    assert {opts.model for _, _, opts in builtin.fake.calls} == {"default-model"}
+
+
+async def test_pipeline_options_models_and_convergence(builtin: Env) -> None:
+    builtin.fake.scripts = converging(gaps=1)  # type: ignore[assignment]
+    inputs = {
+        "spec": "Add login",
+        "skip_clarify": "true",
+        "with_checklist": "true",
+        "checklist_topic": "security",
+        "reasoning": "claude-haiku-5-5",
+        "plan": "claude-opus-5-5",
+        "code": "claude-sonnet-5-5",
+        "allowed_tools": "Bash(npm test)",
+    }
+    run = await builtin.runner().start(builtin.repo, workflow("pipeline"), inputs)
+    assert run.status is RunStatus.COMPLETED, run.error
+    calls = [(task.text, task.args, opts.model) for task, _, opts in builtin.fake.calls]
+    assert [(text, model) for text, _, model in calls] == [
+        ("compose-constitution", "claude-haiku-5-5"),
+        ("compose-specify", "claude-haiku-5-5"),
+        ("compose-plan", "claude-opus-5-5"),
+        ("compose-checklist", "claude-haiku-5-5"),
+        ("compose-tasks", "claude-haiku-5-5"),
+        ("compose-analyze", "claude-haiku-5-5"),
+        ("compose-implement", "claude-sonnet-5-5"),
+        ("compose-converge", "claude-haiku-5-5"),
+        ("compose-implement", "claude-sonnet-5-5"),
+        ("compose-converge", "claude-haiku-5-5"),
+    ]
+    assert calls[3][1] == "security"
+    remaining = builtin.exec_of(run, "implement-remaining")
+    assert len(remaining) == 1 and remaining[0].model == "claude-sonnet-5-5"
+    claude = build_options(builtin.worktree(run), builtin.fake.calls[-2][2])
+    assert claude.allowed_tools == [*ALWAYS_ALLOWED, "Bash(npm test)"]
+
+
+async def test_pipeline_rejected_clarify_aborts(builtin: Env) -> None:
+    inputs = {"spec": "Risky idea", "review_clarify_verdict": "reject"}
+    run = await builtin.runner().start(builtin.repo, workflow("pipeline"), inputs)
+    assert run.status is RunStatus.ABORTED
+    assert "compose-plan" not in called(builtin)
+
+
 def fixer(passes_on: int | None) -> object:
     attempts: list[str] = []
 
@@ -267,3 +334,77 @@ async def test_bugfix_gives_up_after_three_tries(builtin: Env) -> None:
     assert run.status is RunStatus.COMPLETED, run.error
     summary_prompt = builtin.fake.calls[-1][0].text.replace("\n", " ")
     assert "exit code 1" in summary_prompt
+
+
+SKILLS_MD = """# Suggested skills
+
+- web-design-guidelines (vercel-labs/agent-skills, 120K installs)
+
+## Install
+
+npx skills add vercel-labs/agent-skills@web-design-guidelines
+npx skills add anthropics/skills@webapp-testing
+npx skills add evil/x; touch pwned
+"""
+
+
+def skill_finder(task: EngineTask, cwd: Path, options: EngineOptions) -> Script:
+    if task.text == "compose-find-skills":
+        return Script(edit(f"specs/{options.env['COMPOSE_FEATURE']}/skills.md", SKILLS_MD))
+    return skills(task, cwd, options)
+
+
+@pytest.fixture
+def fake_npx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """An npx on PATH that records its arguments instead of installing anything."""
+    bin_dir = tmp_path / "fake-bin"
+    bin_dir.mkdir()
+    log = tmp_path / "npx.log"
+    npx = bin_dir / "npx"
+    npx.write_text(f'#!/bin/sh\necho "$@" >> "{log}"\n')
+    npx.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}:{os.environ['PATH']}")
+    return log
+
+
+PIPELINE_SKILLS = {"spec": "Add a dashboard", "skip_clarify": "true", "with_skills": "true"}
+
+
+async def test_pipeline_skips_skills_by_default(builtin: Env) -> None:
+    inputs = {"spec": "Add a dashboard", "skip_clarify": "true"}
+    run = await builtin.runner().start(builtin.repo, workflow("pipeline"), inputs)
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert "compose-find-skills" not in called(builtin)
+
+
+async def test_pipeline_finds_skills_after_plan_and_waits(builtin: Env, fake_npx: Path) -> None:
+    builtin.fake.scripts = skill_finder  # type: ignore[assignment]
+    runner = builtin.runner()
+    run = await runner.start(builtin.repo, workflow("pipeline"), PIPELINE_SKILLS)
+    assert run.status is RunStatus.PAUSED and run.current_step_id == "skills-gate"
+    assert called(builtin)[-2:] == ["compose-plan", "compose-find-skills"]
+    find = builtin.fake.calls[-1][0]
+    assert "Do not install anything" in (find.args or "")
+    assert not fake_npx.exists()
+
+    run = await runner.resume(run.id, choice="install")
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert called(builtin).index("compose-tasks") > called(builtin).index("compose-find-skills")
+    installs = fake_npx.read_text().splitlines()
+    assert installs == [
+        "--yes skills add vercel-labs/agent-skills@web-design-guidelines -a claude-code -y",
+        "--yes skills add anthropics/skills@webapp-testing -a claude-code -y",
+    ]  # the malformed line never reaches npx
+    assert not (builtin.worktree(run) / "pwned").exists()
+    (install,) = builtin.exec_of(run, "skills-install")
+    assert install.status.value == "completed"
+
+
+async def test_pipeline_rejected_skills_are_not_installed(builtin: Env, fake_npx: Path) -> None:
+    builtin.fake.scripts = skill_finder  # type: ignore[assignment]
+    inputs = {**PIPELINE_SKILLS, "review_skills_verdict": "reject"}
+    run = await builtin.runner().start(builtin.repo, workflow("pipeline"), inputs)
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert builtin.exec_of(run, "skills-install") == []
+    assert not fake_npx.exists()
+    assert "compose-implement" in called(builtin)

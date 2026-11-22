@@ -13,7 +13,7 @@ or by hand inside Claude Code with the same skills.
   `npx skills`; adapted from vercel-labs/skills, MIT),
   `/compose-constitution`, and `/compose`, which operates compose itself.
 - **Workflows** chain those skills with shell steps, review gates, loops, branches and
-  hooks. Three are built in (`quick`, `full-cycle`, `bugfix`) and you can write your own.
+  hooks. Four are built in (`pipeline`, the default, plus `quick`, `full-cycle`, `bugfix`) and you can write your own.
 - **Traceability:** every message, tool call and result per step, with hooks nested.
 - **Cost and change tracking** per step, run, feature, repo or day, hooks included.
 - **One worktree and branch per feature**; runs on different features run in parallel.

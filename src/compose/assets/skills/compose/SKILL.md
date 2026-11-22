@@ -1,6 +1,6 @@
 ---
 name: compose
-description: Operate compose for the user — start spec-driven workflows (full-cycle, quick, bugfix or custom), check run status, answer gates, resume or abort runs, and report traces, file changes and cost. Use when the user asks to run a compose workflow or asks about a compose run.
+description: Operate compose for the user — start spec-driven workflows (pipeline — the default — full-cycle, quick, bugfix or custom), check run status, answer gates, resume or abort runs, and report traces, file changes and cost. Use when the user asks to run a compose workflow or asks about a compose run.
 argument-hint: "[what to do, e.g. run full-cycle for <feature>]"
 ---
 

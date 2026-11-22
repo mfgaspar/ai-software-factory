@@ -44,7 +44,7 @@ branch plus `specs/NNN-name/` in your current checkout.
 ## Runs
 
 ```bash
-compose run <workflow|path> [-i name=value ...] [--feature NNN-name] [--repo r]
+compose run [workflow|path] [-i name=value ...] [--feature NNN-name] [--repo r]
             [--detach] [--interactive/--no-interactive] [-v]
 compose status [<run>] [--status s] [--feature f] [--repo r] [-n 20]
 compose resume <run> [--choice option] [-i name=value ...] [--detach] [-v]
@@ -103,6 +103,7 @@ See [api.md](api.md). Set `server.token` in `~/.compose/config.yml` (or
 defaults:
   engine: claude
   model: claude-sonnet-5-5   # used when a workflow or step names none
+  workflow: pipeline         # what compose run starts when no workflow is named
 server:
   host: 127.0.0.1
   port: 8765

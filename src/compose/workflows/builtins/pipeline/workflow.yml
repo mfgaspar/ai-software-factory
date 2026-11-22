@@ -1,0 +1,205 @@
+schema_version: "1.0"
+workflow:
+  id: automated
+  name: Compose Build Automated Flow
+  version: 1.2.0
+  author: gaspar
+  description: >
+    Chains specify, clarify, plan, find-skills (optional), tasks, analyze, implement and
+    converge into one guided run with a clarify gate and a post-implement convergence loop.
+    The default workflow for compose run.
+inputs:
+  spec:
+    type: string
+    required: true
+    prompt: Describe what you want to build
+  feature_name:
+    type: string
+    description: Short name for a new feature (default derived from the spec).
+  with_constitution:
+    type: boolean
+    default: false
+    description: >
+      Run the constitution step even when the project already has one
+      (it always runs when the constitution is missing).
+  with_checklist:
+    type: boolean
+    default: false
+    description: Add a requirements-quality checklist after planning.
+  checklist_topic:
+    type: string
+    default: requirements
+    description: What the checklist covers (e.g. security, ux, api).
+  with_skills:
+    type: boolean
+    default: false
+    description: >
+      After planning, look for published agent skills that fit the plan's stack
+      (needs Node.js and network access) and offer to install them into the worktree.
+  review_skills_verdict:
+    type: string
+    default: ""
+    description: Pre-answer the skills gate (install or reject).
+  skip_clarify:
+    type: boolean
+    default: false
+    description: Skip clarify and its review gate.
+  review_clarify_verdict:
+    type: string
+    default: ""
+    description: Pre-answer the clarify review gate (approve or reject).
+  reasoning:
+    type: string
+    default: ""
+    description: >
+      Model for constitution, specify, clarify, find-skills, checklist, tasks, analyze
+      and converge
+      (empty: the configured default model).
+  plan:
+    type: string
+    default: ""
+    description: Model for plan (empty - the configured default model).
+  code:
+    type: string
+    default: ""
+    description: Model for implement (empty - the configured default model).
+  allowed_tools:
+    type: string
+    default: ""
+    description: >
+      Extra tools implement may use without asking, comma-separated
+      (e.g. "Bash(npm test),Bash(npm run lint)"). Needed for it to run your tests.
+steps:
+  - id: constitution
+    type: if
+    condition: "{{ inputs.with_constitution or not context.constitution_exists }}"
+    then:
+      - id: constitution-run
+        command: compose-constitution
+        model: "{{ inputs.reasoning }}"
+
+  - id: specify
+    command: compose-specify
+    model: "{{ inputs.reasoning }}"
+    input:
+      args: "{{ inputs.spec }}"
+
+  - id: clarify
+    type: if
+    condition: "{{ not inputs.skip_clarify }}"
+    then:
+      - id: clarify-run
+        command: compose-clarify
+        model: "{{ inputs.reasoning }}"
+      - id: clarify-gate
+        type: gate
+        message: "Review the clarifications in {{ context.feature.dir }}/spec.md before planning."
+        verdict_input: review_clarify_verdict
+        options: [approve, reject]
+        on_reject: abort
+
+  - id: plan
+    command: compose-plan
+    model: "{{ inputs.plan }}"
+
+  # Skills fit best right after plan: the plan fixes the stack to search for, and every
+  # later step starts a new Claude Code session, so tasks and implement can use them.
+  # Nothing is installed without a human answer at the gate.
+  - id: skills
+    type: if
+    condition: "{{ inputs.with_skills }}"
+    then:
+      - id: find-skills
+        command: compose-find-skills
+        model: "{{ inputs.reasoning }}"
+        continue_on_error: true
+        input:
+          args: >
+            skills that would help build what {{ context.feature.dir }}/plan.md describes
+            (its stack, libraries, test and build tools). Do not install anything. Write
+            your verified suggestions to {{ context.feature.dir }}/skills.md: for each,
+            what it does, its install count and source; then a section "## Install" with
+            one line per skill worth installing, exactly `npx skills add owner/repo@skill`
+            and nothing else on the line. Leave that section empty if none qualify.
+      - id: skills-gate
+        type: gate
+        message: >
+          Review the suggested skills in {{ context.feature.dir }}/skills.md. Install the
+          ones under "## Install" into this feature's worktree?
+        verdict_input: review_skills_verdict
+        options: [install, reject]
+        on_reject: skip
+      - id: skills-install-check
+        type: if
+        condition: "{{ steps.skills-gate.output.choice == 'install' }}"
+        then:
+          - id: skills-install
+            type: shell
+            strict: true
+            continue_on_error: true
+            env:
+              SKILLS_FILE: "{{ context.feature.dir }}/skills.md"
+            # only well-formed owner/repo[@skill] names reach npx, one at a time
+            run: |
+              pkgs=$(sed -nE 's#^npx skills add ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(@[A-Za-z0-9_.:-]+)?)$#\1#p' "$SKILLS_FILE")
+              if [ -z "$pkgs" ]; then echo "no skills to install in $SKILLS_FILE"; exit 0; fi
+              for pkg in $pkgs; do
+                echo "installing $pkg"
+                npx --yes skills add "$pkg" -a claude-code -y || exit 1
+              done
+
+  - id: checklist
+    type: if
+    condition: "{{ inputs.with_checklist }}"
+    then:
+      - id: checklist-run
+        command: compose-checklist
+        model: "{{ inputs.reasoning }}"
+        input:
+          args: "{{ inputs.checklist_topic }}"
+
+  - id: tasks
+    command: compose-tasks
+    model: "{{ inputs.reasoning }}"
+
+  # analyze is a read-only cross-artifact consistency check (spec/plan/tasks); it runs
+  # as a single pre-implement pass and its failure does not stop the run.
+  - id: analyze
+    command: compose-analyze
+    model: "{{ inputs.reasoning }}"
+    continue_on_error: true
+
+  - id: implement
+    command: compose-implement
+    model: "{{ inputs.code }}"
+    engine_options:
+      allowed_tools: ["{{ inputs.allowed_tools | split(',') }}"]
+
+  # Post-implement convergence loop: converge appends whatever is still missing to
+  # tasks.md as open tasks; implement finishes them. It repeats while tasks.md still
+  # has open tasks, up to 3 rounds.
+  - id: converge-loop
+    type: do-while
+    max_iterations: 3
+    condition: "{{ steps.open-tasks.output.exit_code == 0 }}"
+    steps:
+      - id: converge
+        command: compose-converge
+        model: "{{ inputs.reasoning }}"
+        continue_on_error: true
+      - id: open-tasks
+        type: shell
+        run: grep -nE '^[[:space:]]*- \[ \]' "{{ context.feature.dir }}/tasks.md"
+        capture: true
+        continue_on_error: true
+      - id: gaps-check
+        type: if
+        condition: "{{ steps.open-tasks.output.exit_code == 0 }}"
+        then:
+          - id: implement-remaining
+            command: compose-implement
+            model: "{{ inputs.code }}"
+            input:
+              args: "the open tasks, starting with the latest Convergence phase"
+            engine_options:
+              allowed_tools: ["{{ inputs.allowed_tools | split(',') }}"]

@@ -56,7 +56,11 @@ class AddRepo(BaseModel):
 
 
 class StartRun(BaseModel):
-    workflow: str = Field(..., description="Workflow id (repo or built-in), or a file path.")
+    workflow: str | None = Field(
+        None,
+        description="Workflow id (repo or built-in), or a file path; default: the configured "
+        "default workflow (pipeline).",
+    )
     feature: str | None = Field(None, description="Existing feature (NNN-name); default new.")
     inputs: dict[str, Any] = Field(default_factory=dict)
 

@@ -211,14 +211,22 @@ class RunContext:
         defaults = config.defaults
         engine = step.engine or meta.engine or defaults.engine
         options = {**config.engines.get(engine, {}), **meta.engine_options, **step.engine_options}
+        scope = scope or Scope()
         return EngineChoice(
             engine=engine,
-            model=step.model or meta.model or defaults.model,
-            reasoning_effort=step.reasoning_effort or meta.reasoning_effort,
-            engine_options={
-                k: self._render_option(v, scope or Scope()) for k, v in options.items()
-            },
+            model=self._render_setting(step.model, scope)
+            or self._render_setting(meta.model, scope)
+            or defaults.model,
+            reasoning_effort=self._render_setting(step.reasoning_effort, scope)
+            or self._render_setting(meta.reasoning_effort, scope),
+            engine_options={k: self._render_option(v, scope) for k, v in options.items()},
         )
+
+    def _render_setting(self, value: str | None, scope: Scope) -> str | None:
+        """A model or reasoning effort; one that renders empty falls back to the next level."""
+        if value is None or "{{" not in value:
+            return value
+        return self.render_text(value, scope).strip() or None
 
     def _render_option(self, value: Any, scope: Scope) -> Any:
         """Expressions in engine_options; a list item that renders to a list is spliced in."""
@@ -426,7 +434,10 @@ class RunContext:
                 outcome = await self._body(step, scope, row, executor, leaf=leaf)
         except RunPaused as paused:
             self._close(row, ExecStatus.PAUSED, error=paused.reason, leaf=leaf)
-            self.state.paused_at = key
+            # the innermost step (the gate itself) is where a resume choice belongs,
+            # not the if / loop around it
+            if self.state.paused_at is None:
+                self.state.paused_at = key
             self.save_state()
             raise
         except RunAborted as aborted:
@@ -668,12 +679,16 @@ class Runner:
     def create_run(
         self,
         repo: Repo,
-        workflow: loader.LoadedWorkflow | str,
+        workflow: loader.LoadedWorkflow | str | None,
         inputs: dict[str, Any] | None = None,
         *,
         feature: str | None = None,
     ) -> Run:
-        """Validate inputs, pick the feature and write the run (status ``created``)."""
+        """Validate inputs, pick the feature and write the run (status ``created``).
+
+        No workflow means the configured default (``defaults.workflow``).
+        """
+        workflow = workflow or self.config.defaults.workflow
         loaded = (
             loader.resolve(workflow, Path(repo.path)) if isinstance(workflow, str) else workflow
         )

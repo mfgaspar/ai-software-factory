@@ -112,14 +112,18 @@
             "type": "object"
           },
           "workflow": {
-            "description": "Workflow id (repo or built-in), or a file path.",
-            "title": "Workflow",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Workflow id (repo or built-in), or a file path; default: the configured default workflow (pipeline).",
+            "title": "Workflow"
           }
         },
-        "required": [
-          "workflow"
-        ],
         "title": "StartRun",
         "type": "object"
       },

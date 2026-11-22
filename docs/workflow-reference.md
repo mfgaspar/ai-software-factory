@@ -19,7 +19,7 @@ repo. This page is the authoritative description of the format and its behavior.
 
 | Source | Location | Notes |
 |---|---|---|
-| built-in | shipped with compose | `full-cycle`, `quick`, `bugfix` |
+| built-in | shipped with compose | `pipeline` (the default), `full-cycle`, `quick`, `bugfix` |
 | repo | `.compose/workflows/<id>/workflow.yml` | installed with `compose workflow add`; shadows a built-in with the same id |
 | file | any path passed to `compose run` | e.g. `compose run ./my-flow.yml` |
 
@@ -531,13 +531,29 @@ Run states: `created → running → completed | paused | failed | aborted`.
 
 | id | steps | inputs |
 |---|---|---|
+| `pipeline` (default) | constitution (if missing or `with_constitution`) → specify → clarify + clarify review gate (unless `skip_clarify`) → plan → find skills + install gate (if `with_skills`) → checklist (if `with_checklist`) → tasks → analyze → implement → converge | `spec`, `feature_name`, `with_constitution`, `with_skills`, `review_skills_verdict`, `with_checklist`, `checklist_topic`, `skip_clarify`, `review_clarify_verdict`, `reasoning`, `plan`, `code`, `allowed_tools` |
 | `quick` | specify → plan → tasks → implement → converge, no gates | `spec`, `feature_name`, `converge`, `allowed_tools` |
 | `full-cycle` | constitution (if missing) → specify → clarify (if `clarify`) → spec review gate → plan → plan review gate → tasks → analyze → implement → converge | `spec`, `feature_name`, `clarify`, `review_spec_verdict`, `review_plan_verdict`, `converge`, `allowed_tools` |
 | `bugfix` | assess → (fix → test) until the tests pass, at most 3 times → summary | `report`, `test_command`, `feature_name`, `allowed_tools` |
 
 In a background run, implement (and bugfix's fix step) can only run the commands you allow:
 pass them as `-i allowed_tools="Bash(npm test),Bash(npm run lint)"`. Rejecting a review
-gate in `full-cycle` aborts the run.
+gate in `full-cycle` or `pipeline` aborts the run.
+
+`compose run` without a workflow starts `defaults.workflow` from `~/.compose/config.yml`
+(`pipeline` unless you change it). In `pipeline`, `reasoning`, `plan` and `code` pick the
+model for the thinking steps, plan and implement; left empty they use the configured
+default model. `model` and `reasoning_effort` on any step or hook may use `{{ }}`
+expressions; one that renders empty falls back to the workflow's, then the config's.
+
+With `-i with_skills=true`, `pipeline` runs `/compose-find-skills` right after plan, when
+the stack is known and before tasks and implement, which can then use what gets
+installed. It writes its suggestions to `specs/<feature>/skills.md` and installs nothing
+itself. The run then stops at `skills-gate`: `install` runs
+`npx skills add <owner/repo@skill> -a claude-code -y` for each line under `## Install`
+(only well-formed names are passed on), into the feature worktree; `reject` skips it.
+Installed files show in that step's changes; committing them is up to you. Needs
+Node.js and network access; a failed install is recorded and the run carries on.
 
 **Converge** (on by default; `-i converge=false` turns it off) runs `/compose-converge`,
 which checks the code against the spec, plan, tasks and constitution and appends what is

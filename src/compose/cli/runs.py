@@ -260,7 +260,11 @@ def _repo_or_none(db: Database, ref: str | None) -> Repo | None:
 
 @handle_errors
 def run(
-    workflow: str = typer.Argument(..., help="Workflow id, or path to a workflow file/folder."),
+    workflow: str | None = typer.Argument(
+        None,
+        help="Workflow id, or path to a workflow file/folder (default: defaults.workflow "
+        "in config, pipeline).",
+    ),
     repo: str | None = typer.Option(None, "--repo", help="Repo name or id (default: here)."),
     feature: str | None = typer.Option(
         None, "--feature", help="Existing feature (NNN-name); default: a new one."

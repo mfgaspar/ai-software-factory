@@ -26,7 +26,7 @@ def write_wf(folder: Path, wf_id: str, name: str = "Custom", extra: str = "") ->
 
 def test_builtins_all_valid() -> None:
     items = loader.list_workflows(None)
-    assert {i.id for i in items} == {"full-cycle", "quick", "bugfix"}
+    assert {i.id for i in items} == {"full-cycle", "quick", "bugfix", "pipeline"}
     assert all(i.error is None and i.source == "builtin" for i in items)
 
 
