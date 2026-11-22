@@ -1,0 +1,301 @@
+{
+  "source": {
+    "input_url": "https://hds-ofe.azurewebsites.net/",
+    "final_url": "https://hds-ofe.azurewebsites.net/login",
+    "crawl_artifact_refs": [],
+    "screenshot_refs": [],
+    "corpus_refs": [],
+    "captured_viewports": [],
+    "captured_regions": [],
+    "missing_evidence": [
+      "browser_screenshots"
+    ]
+  },
+  "colors": {
+    "color.accent": {
+      "value": "#b938190f",
+      "role": "brand accent primary",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "color.canvas": {
+      "value": "#06111f",
+      "role": "dark_canvas_background_inferred",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "color.critical-red": {
+      "value": "#c63224",
+      "role": "destructive_fill_and_error_signal",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "color.surface": {
+      "value": "#f7e7e3",
+      "role": "critical_surface_tint",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "color.info-tint-blue": {
+      "value": "#4b7bbf24",
+      "role": "informational_tint_inferred",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "color.text.muted": {
+      "value": "#0e0e149e",
+      "role": "muted_text_and_disabled_label",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "color.canvas-2": {
+      "value": "#fff",
+      "role": "light_canvas_and_inverse_text",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "color.positive-tint-green": {
+      "value": "#2e8b5724",
+      "role": "positive_status_tint_inferred",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    }
+  },
+  "typography": {
+    "font.body.sm": {
+      "fontFamily": "monospace, JetBrains Mono, ui-monospace",
+      "fallbacks": [
+        "ui-monospace",
+        "monospace"
+      ],
+      "size": "12px",
+      "weight": "not_observed",
+      "lineHeight": null,
+      "letterSpacing": null,
+      "role": null,
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "font.display.md": {
+      "fontFamily": "Archivo, system-ui, sans-serif",
+      "fallbacks": [
+        "system-ui",
+        "sans-serif"
+      ],
+      "size": "36px",
+      "weight": "not_observed",
+      "lineHeight": null,
+      "letterSpacing": null,
+      "role": null,
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "font.heading.md": {
+      "fontFamily": "Archivo, system-ui, sans-serif",
+      "fallbacks": [
+        "system-ui",
+        "sans-serif"
+      ],
+      "size": "24px",
+      "weight": "not_observed",
+      "lineHeight": null,
+      "letterSpacing": null,
+      "role": null,
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "font.ui": {
+      "fontFamily": "JetBrains Mono, ui-monospace, monospace",
+      "fallbacks": [
+        "ui-monospace",
+        "monospace"
+      ],
+      "size": "12px",
+      "weight": "600 (inferred from .topbar-link; family not confirmed)",
+      "lineHeight": null,
+      "letterSpacing": null,
+      "role": null,
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "font.caption": {
+      "fontFamily": "Archivo, system-ui, sans-serif",
+      "fallbacks": [
+        "system-ui",
+        "sans-serif"
+      ],
+      "size": "10px",
+      "weight": "not_observed",
+      "lineHeight": null,
+      "letterSpacing": null,
+      "role": null,
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "font.body": {
+      "fontFamily": "Archivo, system-ui, sans-serif",
+      "fallbacks": [
+        "system-ui",
+        "sans-serif"
+      ],
+      "size": "16px",
+      "weight": "700",
+      "lineHeight": null,
+      "letterSpacing": null,
+      "role": null,
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    }
+  },
+  "spacing": {},
+  "radii": {
+    "radius.avatar-circle": {
+      "value": "50%",
+      "role": "circular shape reserved for topbar avatar",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "radius.markdown-code-radius": {
+      "value": ".45rem",
+      "role": "inline code chip rounding inside rendered markdown",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "radius.none": {
+      "value": "0",
+      "role": "square corners on base form controls and action elements",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "radius.quarter-rem": {
+      "value": ".25rem",
+      "role": "small rounding utility for generic rounded elements",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "radius.xl-theme": {
+      "value": ".75rem",
+      "role": "theme-level large radius token",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "radius.rounded-20px": {
+      "value": "20px",
+      "role": "large soft rounding utility, arbitrary value",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    },
+    "radius.pill": {
+      "value": "3.40282e+38px",
+      "role": "full-pill rounding utility as extracted; treat as a full-round sentinel, not a design value",
+      "confidence": {
+        "supportStatus": "supported",
+        "confidence": "high",
+        "sourceQuality": "direct_css"
+      }
+    }
+  },
+  "shadows": {},
+  "components": [
+    {
+      "name": "Ghost action button",
+      "category": "actions",
+      "description": "Transparent-background button with ink text and a red :before marker. Hover fills with the paper-2 surface. Used for low-emphasis actions. Linked CSS only; not present in the rendered login view.",
+      "tokens": [],
+      "implementationGuidance": [],
+      "misuseWarnings": []
+    },
+    {
+      "name": "Primary action button",
+      "category": "actions",
+      "description": "Filled near-black button (#0e0e14) with white text, 4px radius, 12px/20px padding, 14px JetBrains Mono, bold weight. Linked CSS adds a hover sheen via :after and a red :before accent. Used for the main sign-in submit.",
+      "tokens": [],
+      "implementationGuidance": [],
+      "misuseWarnings": []
+    },
+    {
+      "name": "Secondary action button",
+      "category": "actions",
+      "description": "Light-filled button (#f7f6f1) with near-black text, same 4px radius, 12px/20px padding, 14px JetBrains Mono. Sits beside the primary action as the lower-emphasis alternative.",
+      "tokens": [],
+      "implementationGuidance": [],
+      "misuseWarnings": []
+    },
+    {
+      "name": "Sign-in form panel",
+      "category": "forms",
+      "description": "Login panel with an eyebrow label (/ SIGN IN), a heading (Database-backed access to OFE.), stacked Email and Password fields, a Sign in primary button, and a helper line (Use your account credentials to sign in.). A paired Create account section sits beside it.",
+      "tokens": [],
+      "implementationGuidance": [],
+      "misuseWarnings": []
+    },
+    {
+      "name": "Text input field",
+      "category": "forms",
+      "description": "White input, 4px radius, 1px border, 12px/16px padding, 14px JetBrains Mono. Labels are Email and Password, with a trailing info affordance.",
+      "tokens": [],
+      "implementationGuidance": [],
+      "misuseWarnings": []
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+@theme {
+  --color-accent: #b938190f;
+  --color-canvas: #06111f;
+  --color-critical-red: #c63224;
+  --color-surface: #f7e7e3;
+  --color-info-tint-blue: #4b7bbf24;
+  --color-text-muted: #0e0e149e;
+  --color-canvas-2: #fff;
+  --color-positive-tint-green: #2e8b5724;
+  --radius-avatar-circle: 50%;
+  --radius-markdown-code-radius: .45rem;
+  --radius-none: 0;
+  --radius-quarter-rem: .25rem;
+  --radius-xl-theme: .75rem;
+  --radius-rounded-20px: 20px;
+  --radius-pill: 3.40282e+38px;
+  --layout-header-height: 55px;
+  --font-body-sm: monospace, "JetBrains Mono", ui-monospace;
+  --font-display-md: Archivo, system-ui, sans-serif;
+  --font-heading-md: Archivo, system-ui, sans-serif;
+  --font-ui: "JetBrains Mono", ui-monospace, monospace;
+  --font-caption: Archivo, system-ui, sans-serif;
+  --font-body: Archivo, system-ui, sans-serif;
+}
