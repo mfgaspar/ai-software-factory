@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import datetime
 from functools import wraps
 from typing import Any, ParamSpec, TypeVar
 
@@ -20,6 +21,9 @@ from compose.repos.features import FeatureError
 from compose.repos.git import GitError
 from compose.repos.registry import RepoError
 from compose.repos.worktrees import WorktreeError
+from compose.runner.errors import RunError
+from compose.runner.state import TransitionError
+from compose.tracking.views import ViewError
 from compose.workflows.loader import WorkflowError
 
 console = Console()
@@ -32,6 +36,9 @@ USER_ERRORS: tuple[type[Exception], ...] = (
     GitError,
     LockHeld,
     RepoError,
+    RunError,
+    TransitionError,
+    ViewError,
     WorktreeError,
     WorkflowError,
 )
@@ -64,5 +71,11 @@ def open_store() -> Iterator[tuple[Home, Database]]:
         db.close()
 
 
+def _json_default(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return str(value)
+
+
 def print_json(data: Any) -> None:
-    typer.echo(json.dumps(data, indent=2, default=str))
+    typer.echo(json.dumps(data, indent=2, default=_json_default))

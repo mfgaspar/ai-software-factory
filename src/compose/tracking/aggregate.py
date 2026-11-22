@@ -99,7 +99,7 @@ rows(kind, root_run_id, feature_id, repo_id, step_id, day, started_at,
 """
 
 
-def _utc(moment: datetime) -> str:
+def utc(moment: datetime) -> str:
     """Timestamps are stored as UTC ISO strings; compare in the same form."""
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
@@ -131,10 +131,10 @@ def totals(
             params.append(value)
     if since is not None:
         where.append("julianday(started_at) >= julianday(?)")
-        params.append(_utc(since))
+        params.append(utc(since))
     if until is not None:
         where.append("julianday(started_at) < julianday(?)")
-        params.append(_utc(until))
+        params.append(utc(until))
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     sql = f"""{_BASE}
     SELECT {key}, SUM(cost), SUM(tin), SUM(tout), SUM(tcr), SUM(tcw),

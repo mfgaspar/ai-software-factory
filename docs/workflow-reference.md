@@ -500,5 +500,31 @@ Run states: `created → running → completed | paused | failed | aborted`.
   again; the failed or paused step starts over. `--choice <option>` answers the gate
   that is waiting, even one inside a called workflow.
 - `compose abort <run>` stops a running run between engine events and marks it `aborted`.
+  A paused or failed run is aborted at once; an aborted run cannot be resumed.
 - A run whose process died is marked `failed` the next time compose starts, and can be
   resumed.
+
+## Running and reporting
+
+```bash
+compose run <workflow|file> [-i name=value ...] [--feature NNN-name] [--repo r] [--detach]
+compose status [<run>] [--status paused] [--feature f]
+compose resume <run> [--choice option] [-i name=value ...] [--detach]
+compose abort <run>
+compose trace <run> [--step id] [--full]
+compose changes <run> [--step id]
+compose cost [--run r | --feature f | --repo r | --all] [--by step|run|feature|repo|day]
+             [--since 2026-11-01] [--until 2026-12-01]
+```
+
+- Every command takes `--json`. `-i name=@file` reads an input from a file.
+- In the foreground, compose prints a line per step and, on a terminal, asks for missing
+  inputs and gate decisions (`--no-interactive` pauses at gates instead).
+- `--detach` starts the run in a background process and returns at once; its output goes
+  to `process.log` in the run folder.
+- `run` and `resume` exit with 0 when the run completes, 1 when it fails or is aborted, and
+  3 when it pauses at a gate.
+- `trace` lists each step's messages, tool calls and results, with each hook's own actions
+  under it. The built-in tracking hooks appear only in `--json`.
+- `cost` defaults to the repository you are in (all repositories elsewhere, or with
+  `--all`) and groups by run, or by step with `--run`.

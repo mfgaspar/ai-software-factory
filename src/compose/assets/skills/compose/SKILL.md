@@ -27,10 +27,12 @@ read results, and summarize them for the user in plain language instead of pasti
   compose run <workflow> -i spec="<feature description>" --json
   ```
 
-  Pass each input as `-i name=value`. Use `--feature NNN-name` to continue an existing
-  feature, and `--detach` to hand the run to a running `compose serve` so it continues in
-  the background. Without `--detach` the command waits until the run completes, pauses or
-  fails, which can take a long time — prefer `--detach` for anything beyond a quick test.
+  Pass each input as `-i name=value` (`-i spec=@path/to/file.md` reads a file). Use
+  `--feature NNN-name` to continue an existing feature, and `--detach` to run it in the
+  background: it prints the run id at once and the run carries on after the command
+  returns. Without `--detach` the command waits until the run completes, pauses or fails,
+  which can take a long time — prefer `--detach` for anything beyond a quick test. Exit
+  codes: 0 completed, 1 failed or aborted, 3 paused at a gate.
 - Before the first run in a repository, `compose check` must pass; if it reports the repo
   is not initialized, run `compose init --engine claude`.
 
@@ -41,7 +43,7 @@ read results, and summarize them for the user in plain language instead of pasti
 - A **paused** run is waiting at a gate (a human review). Tell the user what the gate asks
   and where the files to review are (in the feature's worktree, shown in the status). Only
   the user decides: never answer a gate yourself. When they decide, run
-  `compose resume <run_id> --choice <option>`.
+  `compose resume <run_id> --choice <option> --detach`.
 - A **failed** run shows the failing step and its error. Explain it; after the cause is
   fixed (or with new inputs: `-i name=value`), `compose resume <run_id>` retries from the
   failed step. Completed steps are not repeated.

@@ -383,7 +383,14 @@ class RunContext:
         self.run.current_step_id = step.id
         store.update(self.db, self.run)
         self.save_state()
-        self.emit("step_started", exec_id=row.id, step_id=step.id, key=key, type=row.step_type)
+        self.emit(
+            "step_started",
+            exec_id=row.id,
+            step_id=step.id,
+            key=key,
+            step_type=row.step_type,
+            parent_exec_id=scope.parent_exec_id,
+        )
 
         plan = (
             hooks.step_hooks(self.definition, step.id, workflow_hooks=leaf)
@@ -910,6 +917,13 @@ class Runner:
         self, run_id: str, inputs: dict[str, Any] | None = None, *, choice: str | None = None
     ) -> Run:
         """Continue a paused or failed run, optionally with new inputs or a gate choice."""
+        self.prepare_resume(run_id, inputs, choice=choice)
+        return await self.execute(run_id)
+
+    def prepare_resume(
+        self, run_id: str, inputs: dict[str, Any] | None = None, *, choice: str | None = None
+    ) -> Run:
+        """Check a run can be resumed and record new inputs or a gate choice (no execution)."""
         run, files, state, definition = self._load(run_id)
         if run.parent_run_id is not None:
             raise RunError(f"{run_id} is a child run; resume its parent {run.parent_run_id}")
@@ -928,7 +942,7 @@ class Runner:
             target_files, target_state = self._deepest_paused(run_id, state)
             target_state.gate_choices[target_state.paused_at or ""] = choice
             target_files.write_state(target_state)
-        return await self.execute(run_id)
+        return run
 
     def _deepest_paused(self, run_id: str, state: RunState) -> tuple[RunFiles, RunState]:
         """The run (this one or a child) whose gate is waiting."""
@@ -943,14 +957,15 @@ class Runner:
         return files, state
 
     def request_abort(self, run_id: str) -> Run:
-        """Abort a run: a running one stops between engine events; a paused one at once."""
+        """Abort a run: a running one stops between engine events; a paused or failed one
+        at once (it can no longer be resumed)."""
         run, files, state, _ = self._load(run_id)
         if run.status is RunStatus.RUNNING:
             run.abort_requested = True
             store.update(self.db, run)
             files.append_event({"type": "abort_requested", "run_id": run.id})
             return run
-        if run.status in (RunStatus.PAUSED, RunStatus.CREATED):
+        if run.status in (RunStatus.PAUSED, RunStatus.CREATED, RunStatus.FAILED):
             run.error = "aborted by request"
             state.error = run.error
             self._set_status(run, state, files, RunStatus.ABORTED)

@@ -26,7 +26,7 @@ ALLOWED_TRANSITIONS: dict[RunStatus, frozenset[RunStatus]] = {
         {RunStatus.COMPLETED, RunStatus.PAUSED, RunStatus.FAILED, RunStatus.ABORTED}
     ),
     RunStatus.PAUSED: frozenset({RunStatus.RUNNING, RunStatus.ABORTED}),
-    RunStatus.FAILED: frozenset({RunStatus.RUNNING}),
+    RunStatus.FAILED: frozenset({RunStatus.RUNNING, RunStatus.ABORTED}),
     RunStatus.COMPLETED: frozenset(),
     RunStatus.ABORTED: frozenset(),
 }
