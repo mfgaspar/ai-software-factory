@@ -76,6 +76,7 @@ class RunState:
     retry_gates: list[str] = field(default_factory=list)
     children: dict[str, str] = field(default_factory=dict)  # key -> child run id
     gate_choices: dict[str, str] = field(default_factory=dict)  # key -> decision given on resume
+    snapshots: dict[str, str] = field(default_factory=dict)  # exec id -> tree at step start
     workflow_dir: str | None = None
     workflow_source: str | None = None
     paused_at: str | None = None

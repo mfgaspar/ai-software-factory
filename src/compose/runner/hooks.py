@@ -13,11 +13,13 @@ from compose.core.ids import new_id
 from compose.core.models import ExecStatus, HookExec, HookKind, StepExec
 from compose.engines.base import EngineTask
 from compose.engines.registry import EngineError
+from compose.repos.git import GitError
 from compose.runner.context import Scope
 from compose.runner.errors import LimitExceeded, RunAborted
 from compose.runner.steps.base import Outcome
 from compose.runner.steps.engine import run_engine
 from compose.runner.steps.shell import run_shell
+from compose.tracking import records
 from compose.workflows import expressions
 from compose.workflows.schema import (
     BUILTIN_TRACKING_HOOKS,
@@ -132,12 +134,18 @@ class BuiltinCall:
 BuiltinImpl = Callable[[BuiltinCall], Awaitable[None]]
 
 
-async def _noop(call: BuiltinCall) -> None:
-    return None
+async def _track_begin(call: BuiltinCall) -> None:
+    await records.track_begin(call.rc, call.step_exec, call.scope)
 
 
-# Tracking (snapshots, file changes, step records) plugs in here.
-BUILTIN_IMPLS: dict[str, BuiltinImpl] = {b.name: _noop for b in BUILTIN_TRACKING_HOOKS}
+async def _track_end(call: BuiltinCall) -> None:
+    await records.track_end(call.rc, call.step_exec, call.scope)
+
+
+BUILTIN_IMPLS: dict[str, BuiltinImpl] = {
+    "compose.track.begin": _track_begin,
+    "compose.track.end": _track_end,
+}
 
 
 def register_builtin(name: str, impl: BuiltinImpl) -> None:
@@ -258,7 +266,16 @@ async def execute_hook(
     )
     timeout = spec.timeout if spec is not None else None
     try:
-        outcome = await rc.guard(_perform(rc, hook, row, step_exec, scope), timeout)
+        if hook.builtin is not None:
+            outcome = await rc.guard(_perform(rc, hook, row, step_exec, scope), timeout)
+        else:
+            outcome = await records.measure_hook(
+                rc,
+                step_exec,
+                row,
+                scope,
+                lambda: rc.guard(_perform(rc, hook, row, step_exec, scope), timeout),
+            )
     except RunAborted as aborted:
         row.status = ExecStatus.ABORTED
         row.error = aborted.reason
@@ -266,7 +283,7 @@ async def execute_hook(
         raise
     except TimeoutError:
         outcome = Outcome.failed(f"timeout after {timeout}s")
-    except (EngineError, LimitExceeded) as exc:
+    except (EngineError, LimitExceeded, GitError) as exc:
         outcome = Outcome.failed(str(exc))
     except expressions.ExpressionError as exc:
         outcome = Outcome.failed(f"expression error: {exc}")

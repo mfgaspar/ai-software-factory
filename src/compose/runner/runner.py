@@ -49,6 +49,7 @@ from compose.runner.errors import (
 from compose.runner.state import CompletedStep, RunFiles, RunState, check_transition
 from compose.runner.steps import control, engine, gate, shell, subworkflow
 from compose.runner.steps.base import Outcome
+from compose.tracking import records
 from compose.workflows import expressions, loader
 from compose.workflows.schema import (
     BaseStep,
@@ -498,7 +499,7 @@ class RunContext:
             # Kept apart while paused so a resumed gate doesn't count its hooks twice.
             hooks.fold_hook_metrics(self.db, row)
         store.update(self.db, row)
-        self.files.write_step_record(row.id, row.model_dump(mode="json"))
+        self.files.write_step_record(row.id, records.step_record(self.db, row))
         self.emit(
             "step_finished",
             exec_id=row.id,
@@ -509,7 +510,13 @@ class RunContext:
         )
 
     def _roll_up(self, row: StepExec) -> None:
-        """Totals of a control step = sum of the leaf executions beneath it."""
+        """Totals of a control step = sum of the executions beneath it.
+
+        Usage comes from leaf steps; file changes from leaf steps and fan-outs (whose
+        items share the worktree and are tracked as a whole). A fan-out keeps the
+        changes its own tracking recorded.
+        """
+        own_changes = (row.files_changed, row.lines_added, row.lines_removed)
         totals = self.db.conn.execute(
             """
             WITH RECURSIVE tree(id) AS (
@@ -519,8 +526,7 @@ class RunContext:
             )
             SELECT COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
                    COALESCE(SUM(cache_read_tokens), 0), COALESCE(SUM(cache_write_tokens), 0),
-                   COALESCE(SUM(cost_usd), 0), COALESCE(SUM(files_changed), 0),
-                   COALESCE(SUM(lines_added), 0), COALESCE(SUM(lines_removed), 0)
+                   COALESCE(SUM(cost_usd), 0)
             FROM step_execs WHERE id IN (SELECT id FROM tree)
               AND step_type IN ('command', 'prompt', 'shell', 'gate')
             """,
@@ -532,10 +538,25 @@ class RunContext:
             row.cache_read_tokens,
             row.cache_write_tokens,
             row.cost_usd,
-            row.files_changed,
-            row.lines_added,
-            row.lines_removed,
         ) = totals
+        if row.step_type == "fan-out":
+            row.files_changed, row.lines_added, row.lines_removed = own_changes
+            return
+        changes = self.db.conn.execute(
+            """
+            WITH RECURSIVE tree(id) AS (
+                SELECT id FROM step_execs WHERE parent_exec_id = ?
+                UNION ALL
+                SELECT s.id FROM step_execs s JOIN tree t ON s.parent_exec_id = t.id
+            )
+            SELECT COALESCE(SUM(files_changed), 0), COALESCE(SUM(lines_added), 0),
+                   COALESCE(SUM(lines_removed), 0)
+            FROM step_execs WHERE id IN (SELECT id FROM tree)
+              AND step_type IN ('command', 'prompt', 'shell', 'gate', 'fan-out')
+            """,
+            (row.id,),
+        ).fetchone()
+        row.files_changed, row.lines_added, row.lines_removed = changes
 
 
 # ============================================================================ runner

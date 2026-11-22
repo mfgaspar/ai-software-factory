@@ -82,6 +82,7 @@ async def execute_fan_out(rc: RunContext, step: FanOutStep, row: StepExec, scope
                 prefix=f"{scope.prefix}{step.id}[{index}]/",
                 extras={"item": item},
                 iteration=index,
+                shared_worktree=True,
             )
             return await rc.run_step(step.step, child)
 

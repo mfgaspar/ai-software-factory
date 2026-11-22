@@ -17,6 +17,8 @@ class Scope:
     extras: dict[str, Any] = field(default_factory=dict)
     parent_exec_id: str | None = None
     iteration: int | None = None
+    # inside a fan-out item: the worktree is shared, so changes belong to the fan-out
+    shared_worktree: bool = False
 
     def key(self, step_id: str) -> str:
         return f"{self.prefix}{step_id}"
@@ -28,12 +30,14 @@ class Scope:
         prefix: str | None = None,
         extras: dict[str, Any] | None = None,
         iteration: int | None = None,
+        shared_worktree: bool | None = None,
     ) -> Scope:
         return Scope(
             prefix=self.prefix if prefix is None else prefix,
             extras={**self.extras, **(extras or {})},
             parent_exec_id=parent_exec_id,
             iteration=self.iteration if iteration is None else iteration,
+            shared_worktree=self.shared_worktree if shared_worktree is None else shared_worktree,
         )
 
 

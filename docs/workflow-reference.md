@@ -409,6 +409,13 @@ a whole, every `fan-out` (its items share the worktree, so their file changes ca
 told apart). Snapshots never commit or touch your index. Files ignored by git and
 compose's own files are excluded. Set `workflow.tracking: false` to turn tracking off.
 
+A step's changes cover everything from just before its first hook to just after its
+last: the step itself, its hooks, and any edits made by hand while a gate was waiting.
+Each hook is also measured on its own, so a step record shows which hook changed what.
+Fan-out items keep their own cost and actions, but their file changes are recorded on
+the fan-out. A loop or `if` shows the sum of the steps inside it. Run and feature totals
+count a file once even when several steps changed it.
+
 ## Limits
 
 ```yaml
