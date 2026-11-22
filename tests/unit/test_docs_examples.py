@@ -11,8 +11,12 @@ import yaml
 
 from compose.workflows.schema import Workflow
 
-DOC = Path(__file__).parents[2] / "docs" / "workflow-reference.md"
-BLOCKS = re.findall(r"```yaml\n(.*?)```", DOC.read_text(), re.DOTALL)
+DOCS = Path(__file__).parents[2] / "docs"
+BLOCKS = [
+    block
+    for name in ("workflow-reference.md", "custom-workflows.md", "cli.md")
+    for block in re.findall(r"```yaml\n(.*?)```", (DOCS / name).read_text(), re.DOTALL)
+]
 
 # Inputs and steps that snippet examples refer to.
 WRAPPER_INPUTS = {

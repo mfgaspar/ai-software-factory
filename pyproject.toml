@@ -1,9 +1,18 @@
 [project]
-name = "compose-sdd"  # distribution name is provisional; see plan "Open naming risk"
+name = "compose-sdd"
 dynamic = ["version"]
 description = "compose: spec-driven development workflows for coding engines, with traceability and cost tracking"
 readme = "README.md"
 requires-python = ">=3.11"
+keywords = ["spec-driven development", "claude code", "workflows", "ai agents"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+]
 dependencies = [
     "typer>=0.12",
     "rich>=13.7",

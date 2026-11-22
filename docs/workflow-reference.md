@@ -2,7 +2,6 @@
 
 A **workflow** is a versioned list of steps that compose runs against one feature of one
 repo. This page is the authoritative description of the format and its behavior.
-(compose's format is inspired by spec-kit's workflows but is not compatible with them.)
 
 - [Where workflows live](#where-workflows-live)
 - [File layout](#file-layout)
