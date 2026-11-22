@@ -435,14 +435,23 @@ When a limit is reached compose stops the engine and the step fails with reason
 `engine`, `model`, `reasoning_effort` and `engine_options` can be set on the workflow, on
 an engine step, or on a hook. The most specific setting wins; unset values come from the
 workflow, then from `defaults` in `~/.compose/config.yml`. `engine_options` are passed to
-the engine adapter.
+the engine adapter. Their values may contain expressions; in a list, an item that is one
+expression giving a list is spliced in, so tools can come from an input:
+
+```yaml
+steps:
+  - id: implement
+    command: compose-implement
+    engine_options:
+      allowed_tools: ["{{ inputs.allowed_tools | split(',') }}"]
+```
 
 For Claude Code (`engine: claude`):
 
 | `engine_options` key | Default | Meaning |
 |---|---|---|
 | `permission_mode` | `acceptEdits` | `default`, `acceptEdits`, `plan`, `bypassPermissions`, `dontAsk` or `auto` |
-| `allowed_tools` | `compose` CLI only | tools allowed without asking, e.g. `["Bash(npm test)"]`; added to `Bash(compose:*)`, which compose's skills need |
+| `allowed_tools` | `compose` CLI only | tools allowed without asking, e.g. `["Bash(npm test)"]`; added to `Bash(compose:*)`, which compose's skills need. Spaces around entries and empty entries are dropped |
 | `disallowed_tools` | none | tools never allowed |
 | `setting_sources` | `[project]` | which Claude Code settings to load: `user`, `project`, `local` |
 | `add_dirs` | none | extra directories Claude Code may access |
@@ -503,6 +512,19 @@ Run states: `created → running → completed | paused | failed | aborted`.
   A paused or failed run is aborted at once; an aborted run cannot be resumed.
 - A run whose process died is marked `failed` the next time compose starts, and can be
   resumed.
+
+## Built-in workflows
+
+| id | steps | inputs |
+|---|---|---|
+| `quick` | specify → plan → tasks → implement, no gates | `spec`, `feature_name`, `allowed_tools` |
+| `full-cycle` | constitution (if missing) → specify → clarify (if `clarify`) → spec review gate → plan → plan review gate → tasks → analyze → implement | `spec`, `feature_name`, `clarify`, `review_spec_verdict`, `review_plan_verdict`, `allowed_tools` |
+| `bugfix` | assess → (fix → test) until the tests pass, at most 3 times → summary | `report`, `test_command`, `feature_name`, `allowed_tools` |
+
+In a background run, implement (and bugfix's fix step) can only run the commands you allow:
+pass them as `-i allowed_tools="Bash(npm test),Bash(npm run lint)"`. Rejecting a review
+gate in `full-cycle` aborts the run. In `bugfix` the tests always run in their own shell
+step, and their output is passed to the next fix attempt.
 
 ## Running and reporting
 

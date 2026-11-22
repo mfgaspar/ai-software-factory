@@ -211,7 +211,15 @@ async def _perform(
     else:
         task = EngineTask.prompt(rc.render_text(spec.prompt or "", scope))
     result = await run_engine(
-        rc, task, spec, Limits(), row, step_exec_id=step_exec_id, hook_exec_id=row.id, env=env
+        rc,
+        task,
+        spec,
+        Limits(),
+        row,
+        step_exec_id=step_exec_id,
+        hook_exec_id=row.id,
+        env=env,
+        scope=scope,
     )
     if result.ok:
         return Outcome.ok(text=result.final_text)

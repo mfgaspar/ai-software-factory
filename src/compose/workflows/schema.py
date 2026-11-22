@@ -165,6 +165,20 @@ class BaseStep(_Model):
             value = getattr(self, name)
             if isinstance(value, str):
                 yield name, value, True
+        yield from option_strings(getattr(self, "engine_options", None))
+
+
+def option_strings(value: Any, label: str = "engine_options") -> Iterator[tuple[str, str, bool]]:
+    """Expression-bearing strings inside engine_options (nested lists and maps)."""
+    if isinstance(value, str):
+        if "{{" in value:
+            yield label, value, False
+    elif isinstance(value, list):
+        for i, item in enumerate(value):
+            yield from option_strings(item, f"{label}[{i}]")
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield from option_strings(item, f"{label}.{key}")
 
 
 class CommandInput(_Model):
@@ -394,6 +408,7 @@ class HookSpec(EngineSettings):
             yield f"env.{key}", value, False
         if self.condition:
             yield "condition", self.condition, True
+        yield from option_strings(self.engine_options)
 
 
 def _as_list(value: Any) -> Any:

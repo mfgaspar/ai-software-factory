@@ -205,15 +205,35 @@ class RunContext:
     def condition(self, text: str, scope: Scope) -> bool:
         return expressions.evaluate_condition(text, self.expression_context(scope))
 
-    def engine_settings(self, step: EngineSettings) -> EngineChoice:
+    def engine_settings(self, step: EngineSettings, scope: Scope | None = None) -> EngineChoice:
         meta = self.definition.workflow
         defaults = self.runner.config.defaults
+        options = {**meta.engine_options, **step.engine_options}
         return EngineChoice(
             engine=step.engine or meta.engine or defaults.engine,
             model=step.model or meta.model or defaults.model,
             reasoning_effort=step.reasoning_effort or meta.reasoning_effort,
-            engine_options={**meta.engine_options, **step.engine_options},
+            engine_options={
+                k: self._render_option(v, scope or Scope()) for k, v in options.items()
+            },
         )
+
+    def _render_option(self, value: Any, scope: Scope) -> Any:
+        """Expressions in engine_options; a list item that renders to a list is spliced in."""
+        if isinstance(value, str):
+            return self.render(value, scope) if "{{" in value else value
+        if isinstance(value, list):
+            out: list[Any] = []
+            for item in value:
+                rendered = self._render_option(item, scope)
+                if isinstance(item, str) and isinstance(rendered, list):
+                    out.extend(rendered)
+                else:
+                    out.append(rendered)
+            return out
+        if isinstance(value, dict):
+            return {k: self._render_option(v, scope) for k, v in value.items()}
+        return value
 
     def check_limits(self, limits: Limits, usage: Usage) -> None:
         if limits.max_cost_usd is not None and usage.cost_usd > limits.max_cost_usd:

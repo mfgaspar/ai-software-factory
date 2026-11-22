@@ -17,7 +17,16 @@ BLOCKS = re.findall(r"```yaml\n(.*?)```", DOC.read_text(), re.DOTALL)
 # Inputs and steps that snippet examples refer to.
 WRAPPER_INPUTS = {
     name: {"type": "string"}
-    for name in ("spec", "clarify", "size", "services", "report", "release", "spec_verdict")
+    for name in (
+        "spec",
+        "clarify",
+        "size",
+        "services",
+        "report",
+        "release",
+        "spec_verdict",
+        "allowed_tools",
+    )
 }
 
 
@@ -46,7 +55,9 @@ def _cases() -> list[tuple[str, dict[str, Any]]]:
             cases.append((f"block{i}-hooks", _wrap(data, "hooks")))
         elif isinstance(data, dict) and set(data) <= {"workflow", "steps"}:
             merged = {"workflow": {"id": "doc-example", "name": "Doc", **data.get("workflow", {})}}
-            cases.append((f"block{i}-partial", {**merged, "steps": data["steps"]}))
+            cases.append(
+                (f"block{i}-partial", {**merged, "inputs": WRAPPER_INPUTS, "steps": data["steps"]})
+            )
     return cases
 
 

@@ -2,7 +2,7 @@ schema_version: "1.0"
 workflow:
   id: quick
   name: Quick spec to code
-  version: 1.0.0
+  version: 1.1.0
   description: Specify, plan, break into tasks and implement, with no review gates.
 inputs:
   spec:
@@ -12,6 +12,12 @@ inputs:
   feature_name:
     type: string
     description: Short name for a new feature (default derived from the spec).
+  allowed_tools:
+    type: string
+    default: ""
+    description: >
+      Extra tools implement may use without asking, comma-separated
+      (e.g. "Bash(npm test),Bash(npm run lint)"). Needed for it to run your tests.
 steps:
   - id: specify
     command: compose-specify
@@ -23,3 +29,5 @@ steps:
     command: compose-tasks
   - id: implement
     command: compose-implement
+    engine_options:
+      allowed_tools: ["{{ inputs.allowed_tools | split(',') }}"]

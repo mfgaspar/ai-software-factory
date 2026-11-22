@@ -46,10 +46,12 @@ def prompt_for(task: EngineTask) -> str:
 
 
 def _list(value: Any, name: str) -> list[str]:
+    """A list of strings; surrounding spaces and empty entries are dropped (so
+    ``"{{ inputs.tools | split(',') }}"`` works with an empty or spaced input)."""
     if isinstance(value, str):
-        return [value]
+        value = [value]
     if isinstance(value, list) and all(isinstance(v, str) for v in value):
-        return list(value)
+        return [v.strip() for v in value if v.strip()]
     raise EngineError(f"engine_options.{name} must be a list of strings")
 
 

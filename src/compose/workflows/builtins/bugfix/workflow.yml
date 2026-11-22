@@ -2,7 +2,7 @@ schema_version: "1.0"
 workflow:
   id: bugfix
   name: Bug fix
-  version: 1.0.0
+  version: 1.1.0
   description: Assess a bug report, then fix and test until the tests pass (up to 3 tries).
 inputs:
   report:
@@ -16,6 +16,12 @@ inputs:
   feature_name:
     type: string
     description: Short name for a new feature (default derived from the report).
+  allowed_tools:
+    type: string
+    default: ""
+    description: >
+      Extra tools the fix step may use without asking, comma-separated
+      (e.g. "Bash(npm test)"). Tests always run in their own step regardless.
 steps:
   - id: assess
     prompt: |
@@ -34,13 +40,20 @@ steps:
         prompt: |
           Fix the bug described in {{ context.feature.dir }}/bug-assessment.md.
           Keep the change minimal and add or update a test that covers it.
-          {{ steps.test.output.stdout | default("") }}
+          The tests run with: {{ inputs.test_command }}
+
+          Output of the last test run, if any:
+          {{ steps.test.output.stdout | default("(not run yet)") }}
+          {{ steps.test.output.stderr | default("") }}
+        engine_options:
+          allowed_tools: ["{{ inputs.allowed_tools | split(',') }}"]
       - id: test
         type: shell
         strict: true
         env:
           TEST_COMMAND: "{{ inputs.test_command }}"
         run: sh -c "$TEST_COMMAND"
+        capture: true
         continue_on_error: true
   - id: summary
     prompt: |

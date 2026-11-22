@@ -34,9 +34,10 @@ async def run_engine(
     step_exec_id: str | None,
     hook_exec_id: str | None = None,
     env: dict[str, str] | None = None,
+    scope: Scope | None = None,
 ) -> EngineOutcome:
     """Run one engine task, streaming its events into the trace and usage into ``record``."""
-    settings = rc.engine_settings(settings_from)
+    settings = rc.engine_settings(settings_from, scope)
     engine = rc.runner.engines.get(settings.engine)
     budgets = [limits.max_cost_usd]
     run_cap = rc.shared.run_limits.max_cost_usd
@@ -91,7 +92,7 @@ async def execute(
         task = EngineTask.skill(step.command, args)
     else:
         task = EngineTask.prompt(rc.render_text(step.prompt, scope))
-    result = await run_engine(rc, task, step, step.limits, row, step_exec_id=row.id)
+    result = await run_engine(rc, task, step, step.limits, row, step_exec_id=row.id, scope=scope)
     if result.ok:
         return Outcome.ok(text=result.final_text, session_id=result.session_id)
     return Outcome.failed(result.error or "failed", session_id=result.session_id)
