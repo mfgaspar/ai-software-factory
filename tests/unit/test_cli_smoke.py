@@ -20,8 +20,10 @@ def test_no_args_shows_help(cli: Callable[..., Result]) -> None:
     assert "Usage" in result.output
 
 
-def test_fixtures_are_isolated(compose_home: Path, git_repo: Path, git: Callable[..., str]) -> None:
+def test_fixtures_are_isolated(
+    compose_home: Path, git_repo: Path, run_git: Callable[..., str]
+) -> None:
     assert os.environ["COMPOSE_HOME"] == str(compose_home)
     assert Path.home() / ".compose" != compose_home
-    assert git(git_repo, "branch", "--show-current") == "main"
-    assert git(git_repo, "log", "--oneline").count("\n") == 0
+    assert run_git(git_repo, "branch", "--show-current") == "main"
+    assert run_git(git_repo, "log", "--oneline").count("\n") == 0

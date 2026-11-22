@@ -35,8 +35,8 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 @pytest.fixture
-def git(tmp_path: Path) -> Callable[..., str]:
-    """Run git in a directory: git(path, "status")."""
+def run_git() -> Callable[..., str]:
+    """Run git in a directory: run_git(path, "status")."""
     return _git
 
 
@@ -76,3 +76,11 @@ def db(home: Home) -> Iterator[Database]:
     database = open_database(home)
     yield database
     database.close()
+
+
+@pytest.fixture
+def bare_remote(git_repo: Path, tmp_path: Path) -> str:
+    """A bare clone of git_repo, as a file:// URL (stands in for a hosted repo)."""
+    bare = tmp_path / "remote.git"
+    _git(tmp_path, "clone", "-q", "--bare", str(git_repo), str(bare))
+    return f"file://{bare}"
