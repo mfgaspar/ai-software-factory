@@ -528,3 +528,35 @@ compose cost [--run r | --feature f | --repo r | --all] [--by step|run|feature|r
   under it. The built-in tracking hooks appear only in `--json`.
 - `cost` defaults to the repository you are in (all repositories elsewhere, or with
   `--all`) and groups by run, or by step with `--run`.
+
+## HTTP API
+
+`compose serve [--host 127.0.0.1] [--port 8765]` serves the same operations over HTTP;
+the OpenAPI document is at `/openapi.json` and interactive docs at `/docs`. Runs started
+through the API execute inside the server; runs started by the CLI are visible and
+resumable through it, and the other way round.
+
+| method and path | what it does |
+| --- | --- |
+| `GET /health` | liveness, version, runs executing in this server |
+| `GET/POST /repos`, `GET/DELETE /repos/{repo}` | list, add (`path` or `url`), show, remove |
+| `GET /repos/{repo}/workflows[/{id}]` | workflows, or one with its effective hooks |
+| `GET /repos/{repo}/features[/{feature}]` | features, or one with its files, runs and totals |
+| `POST /repos/{repo}/runs` | `{workflow, feature?, inputs}`: start a run (202; 409 if the feature is busy) |
+| `GET /runs?repo=&feature=&status=&since=&limit=` | root runs, newest first |
+| `GET /runs/{run}` | status, waiting gate, every step, totals |
+| `GET /runs/{run}/steps/{exec_id}` | one step execution with hooks, files and actions |
+| `GET /runs/{run}/trace?step=`, `GET /runs/{run}/changes?step=` | as `compose trace` / `changes` |
+| `GET /runs/{run}/events?after=&limit=` | the event log, paged by `seq` |
+| `GET /runs/{run}/events?stream=true` | Server-Sent Events until the run stops (honours `Last-Event-ID`) |
+| `POST /runs/{run}/resume` | `{inputs?, choice?}` |
+| `POST /runs/{run}/gates/{step}` | `{choice}`: answer the waiting gate and resume |
+| `POST /runs/{run}/abort` | abort |
+| `GET /costs?repo=&feature=&run=&group_by=&from=&to=` | as `compose cost` |
+
+Set `server.token` in `config.yml` (or `COMPOSE_API_TOKEN`) to require
+`Authorization: Bearer <token>` on every route except `/health`. Errors are JSON
+`{"detail": ...}`: 404 for an unknown repo, run or feature, 409 for a busy feature or a run
+in the wrong state, 422 for bad inputs or workflows. Stopping the server marks the runs it
+was executing `failed`, so they can be resumed.
+

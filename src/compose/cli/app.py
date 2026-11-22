@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from compose import __version__
-from compose.cli import feature, repo, runs, setup, workflow
+from compose.cli import feature, repo, runs, serve, setup, workflow
 
 app = typer.Typer(
     name="compose",
@@ -25,6 +25,7 @@ app.command("abort")(runs.abort)
 app.command("trace")(runs.trace)
 app.command("changes")(runs.changes)
 app.command("cost")(runs.cost)
+app.command("serve")(serve.serve)
 app.command("_execute", hidden=True)(runs.execute)
 
 

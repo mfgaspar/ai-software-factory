@@ -13,13 +13,11 @@ from compose.cli.common import console, handle_errors, print_json
 from compose.repos import git
 from compose.workflows import loader
 from compose.workflows.schema import (
-    BUILTIN_TRACKING_HOOKS,
     BaseStep,
     CommandStep,
     GateStep,
     PromptStep,
     ShellStep,
-    Workflow,
     WorkflowCallStep,
 )
 
@@ -94,35 +92,6 @@ def _add_steps(tree: Tree, steps: list[Any]) -> None:
             _add_steps(branch, children)
 
 
-def _effective_hooks(definition: Workflow) -> list[dict[str, Any]]:
-    hooks: list[dict[str, Any]] = []
-    if definition.workflow.tracking:
-        for b in BUILTIN_TRACKING_HOOKS:
-            hooks.append(
-                {
-                    "event": b.event,
-                    "name": b.name,
-                    "builtin": True,
-                    "position": b.position,
-                    "description": b.description,
-                }
-            )
-    for event, specs in definition.hooks.items():
-        for spec in specs:
-            hooks.append(
-                {
-                    "event": event,
-                    "name": spec.label,
-                    "builtin": False,
-                    "kind": spec.kind,
-                    "priority": spec.priority,
-                    "optional": spec.optional,
-                    "condition": spec.condition,
-                }
-            )
-    return hooks
-
-
 @app.command("info")
 @handle_errors
 def info(
@@ -138,7 +107,7 @@ def info(
                 "source": loaded.source,
                 "path": str(loaded.path),
                 "definition": definition.model_dump(mode="json", by_alias=True),
-                "effective_hooks": _effective_hooks(definition),
+                "effective_hooks": loader.effective_hooks(definition),
             }
         )
         return
@@ -157,7 +126,7 @@ def info(
     _add_steps(tree, definition.steps)
     console.print(tree)
     table = Table("event", "hook", "notes", title="Hooks", title_justify="left")
-    for hook in _effective_hooks(definition):
+    for hook in loader.effective_hooks(definition):
         if hook["builtin"]:
             notes = f"built-in, runs {hook['position']}"
         else:

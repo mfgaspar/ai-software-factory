@@ -9,13 +9,13 @@ from __future__ import annotations
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 import yaml
 from pydantic import ValidationError
 
-from compose.workflows.schema import Workflow
+from compose.workflows.schema import BUILTIN_TRACKING_HOOKS, Workflow
 
 BUILTIN_DIR = Path(__file__).parent / "builtins"
 REPO_WORKFLOWS_DIR = Path(".compose") / "workflows"
@@ -184,3 +184,33 @@ def remove_workflow(repo_root: Path, workflow_id: str) -> Path:
         raise WorkflowError(f"No installed workflow {workflow_id!r} in {repo_root}")
     shutil.rmtree(target)
     return target
+
+
+def effective_hooks(definition: Workflow) -> list[dict[str, Any]]:
+    """Hooks that run, built-in tracking hooks included, as JSON-ready dicts."""
+    hooks: list[dict[str, Any]] = []
+    if definition.workflow.tracking:
+        for b in BUILTIN_TRACKING_HOOKS:
+            hooks.append(
+                {
+                    "event": b.event,
+                    "name": b.name,
+                    "builtin": True,
+                    "position": b.position,
+                    "description": b.description,
+                }
+            )
+    for event, specs in definition.hooks.items():
+        for spec in specs:
+            hooks.append(
+                {
+                    "event": event,
+                    "name": spec.label,
+                    "builtin": False,
+                    "kind": spec.kind,
+                    "priority": spec.priority,
+                    "optional": spec.optional,
+                    "condition": spec.condition,
+                }
+            )
+    return hooks

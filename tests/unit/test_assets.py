@@ -24,8 +24,7 @@ WORKFLOW_SKILLS = [
     "compose-specify",
     "compose-tasks",
 ]
-# Commands the operator skill teaches that do not exist yet.
-PLANNED = {"serve"}  # the API server arrives in M10
+PLANNED: set[str] = set()
 
 
 def frontmatter(path: Path) -> tuple[dict[str, object], str]:
