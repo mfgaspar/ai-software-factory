@@ -84,3 +84,13 @@ def bare_remote(git_repo: Path, tmp_path: Path) -> str:
     bare = tmp_path / "remote.git"
     _git(tmp_path, "clone", "-q", "--bare", str(git_repo), str(bare))
     return f"file://{bare}"
+
+
+@pytest.fixture
+def env(db: Database, home: Home, git_repo: Path, tmp_path: Path) -> object:
+    from compose.engines.fake import FakeEngine
+    from compose.repos import registry
+    from tests.unit.runner_helpers import Env
+
+    repo = registry.add_repo(db, home, str(git_repo))
+    return Env(db, home, git_repo, tmp_path, FakeEngine(), [], repo)

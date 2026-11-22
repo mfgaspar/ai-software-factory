@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import random
 import sqlite3
 import threading
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 from importlib import resources
@@ -53,6 +55,22 @@ def _migrations() -> list[tuple[int, str, str]]:
     return found
 
 
+def _with_retry(action: Callable[[], object], attempts: int = 100) -> None:
+    """Retry an operation SQLite reports as locked without consulting the busy handler.
+
+    Switching a brand-new database to WAL needs an exclusive lock and fails at once with
+    "database is locked" when two processes create the database at the same moment.
+    """
+    for attempt in range(attempts):
+        try:
+            action()
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc) or attempt == attempts - 1:
+                raise
+            time.sleep(0.02 + random.random() * 0.03)
+
+
 class Database:
     """One SQLite database file; one connection per thread.
 
@@ -69,8 +87,8 @@ class Database:
         if conn is None:
             conn = sqlite3.connect(self.path, isolation_level=None, timeout=BUSY_TIMEOUT_MS / 1000)
             conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+            _with_retry(lambda: conn.execute("PRAGMA journal_mode=WAL"))
             conn.execute("PRAGMA foreign_keys=ON")
             conn.execute("PRAGMA synchronous=NORMAL")
             self._local.conn = conn
@@ -105,9 +123,11 @@ class Database:
 
     def schema_version(self) -> int:
         conn = self.conn
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations ("
-            " version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"
+        _with_retry(
+            lambda: conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations ("
+                " version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL)"
+            )
         )
         row = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
         return int(row[0] or 0)

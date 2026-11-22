@@ -142,6 +142,11 @@ class BaseStep(_Model):
             raise ValueError(f"step id {value!r} is reserved")
         return value
 
+    @property
+    def kind(self) -> str:
+        """The step type (``command``, ``gate``, ``fan-out``, ...)."""
+        return str(getattr(self, "type"))  # noqa: B009 - declared on each subclass
+
     def children(self) -> Iterator[tuple[str, list[Step]]]:
         """Nested step lists, labelled (e.g. ``"then"``)."""
         return iter(())

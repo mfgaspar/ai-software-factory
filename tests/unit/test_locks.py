@@ -80,8 +80,11 @@ def test_heartbeat_and_keep_alive(db: Database) -> None:
     assert after is not None and after.heartbeat_at > before.heartbeat_at
 
     lock.keep_alive(interval=0.05)
-    time.sleep(0.2)
+    deadline = time.time() + 5
     beat = locks.read_lock(db, "k")
+    while beat is not None and beat.heartbeat_at <= after.heartbeat_at and time.time() < deadline:
+        time.sleep(0.02)
+        beat = locks.read_lock(db, "k")
     assert beat is not None and beat.heartbeat_at > after.heartbeat_at
     lock.release()
     assert locks.read_lock(db, "k") is None
