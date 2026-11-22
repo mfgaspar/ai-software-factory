@@ -146,7 +146,7 @@ class FakeEngine:
             script = self.scripts.get(task.text, self.default)
         return FakeRun(script, cwd)
 
-    def install(self, path: Path) -> list[Path]:
+    def install(self, path: Path, *, worktree: bool = False) -> list[Path]:
         return []
 
     def check(self) -> list[str]:

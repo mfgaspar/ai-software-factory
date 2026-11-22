@@ -435,7 +435,24 @@ When a limit is reached compose stops the engine and the step fails with reason
 `engine`, `model`, `reasoning_effort` and `engine_options` can be set on the workflow, on
 an engine step, or on a hook. The most specific setting wins; unset values come from the
 workflow, then from `defaults` in `~/.compose/config.yml`. `engine_options` are passed to
-the engine adapter (for Claude Code: e.g. `permission_mode`, `allowed_tools`).
+the engine adapter.
+
+For Claude Code (`engine: claude`):
+
+| `engine_options` key | Default | Meaning |
+|---|---|---|
+| `permission_mode` | `acceptEdits` | `default`, `acceptEdits`, `plan`, `bypassPermissions`, `dontAsk` or `auto` |
+| `allowed_tools` | none | tools allowed without asking, e.g. `["Bash(npm test)"]` |
+| `disallowed_tools` | none | tools never allowed |
+| `setting_sources` | `[project]` | which Claude Code settings to load: `user`, `project`, `local` |
+| `add_dirs` | none | extra directories Claude Code may access |
+| `cli_path` | bundled CLI | a specific `claude` executable |
+
+`reasoning_effort` is one of `low`, `medium`, `high`, `xhigh`, `max`. A step's
+`max_cost_usd`, or what is left of the run's, is passed to Claude Code as its budget, so
+it stops itself when the budget runs out. A `command` step runs as the slash command
+`/<skill> <args>`, the same as typing it. compose installs its skills into each feature
+worktree and hides them from git, unless the repo commits its own copies.
 
 ## Expressions
 

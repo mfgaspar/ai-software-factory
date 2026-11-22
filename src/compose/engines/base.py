@@ -41,6 +41,7 @@ class EngineOptions:
     model: str | None = None
     reasoning_effort: str | None = None
     max_turns: int | None = None
+    max_cost_usd: float | None = None  # budget for this task (step limit or what the run has left)
     engine_options: dict[str, Any] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
 
@@ -123,8 +124,12 @@ class Engine(Protocol):
 
     def start(self, task: EngineTask, cwd: Path, options: EngineOptions) -> EngineRun: ...
 
-    def install(self, path: Path) -> list[Path]:
-        """Put this engine's skills in place under ``path``; return files written."""
+    def install(self, path: Path, *, worktree: bool = False) -> list[Path]:
+        """Put this engine's skills in place under ``path``; return files written.
+
+        ``worktree=True`` is a run worktree: files the repo already commits are left as
+        they are, and the ones compose adds are hidden from git.
+        """
         ...
 
     def check(self) -> list[str]:

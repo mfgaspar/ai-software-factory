@@ -34,6 +34,7 @@ from compose.engines.base import (
 )
 from compose.engines.registry import EngineError, EngineRegistry, default_registry
 from compose.repos import features
+from compose.repos.git import GitError
 from compose.repos.worktrees import ensure_feature_worktree
 from compose.runner import hooks
 from compose.runner.context import Scope, step_result
@@ -711,6 +712,33 @@ class Runner:
         store.update(self.db, run)
         files.write_state(state)
 
+    def engines_used(self, definition: Workflow) -> list[str]:
+        """Engines a workflow's engine steps and hooks run on (called workflows use the
+        default engine unless they say otherwise)."""
+        meta = definition.workflow
+        default = meta.engine or self.config.defaults.engine
+        names = {default}
+        for _, step, _ in definition.iter_steps():
+            if step.kind in ("command", "prompt"):
+                names.add(getattr(step, "engine", None) or default)
+        for hooks_list in definition.hooks.values():
+            for hook in hooks_list:
+                if hook.kind != "run":
+                    names.add(hook.engine or default)
+        return sorted(names)
+
+    def _install_engines(self, definition: Workflow, worktree: Path) -> None:
+        """Make each engine's skills available in the run worktree, hidden from git."""
+        for name in self.engines_used(definition):
+            try:
+                engine = self.engines.get(name)
+            except EngineError:
+                continue  # reported by the step that needs it
+            try:
+                engine.install(worktree, worktree=True)
+            except GitError as exc:
+                raise RunError(f"Could not install {name} files in {worktree}: {exc}") from exc
+
     def _spent(self, root_run_id: str) -> float:
         row = self.db.conn.execute(
             """
@@ -755,6 +783,7 @@ class Runner:
         lock.keep_alive()
         try:
             worktree = ensure_feature_worktree(self.db, self.home, repo, feature)
+            self._install_engines(definition, worktree)
             run.abort_requested = False
             state.error = None
             state.paused_at = None

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
-
 from compose.engines.base import Engine
 
 
@@ -31,10 +29,6 @@ class EngineRegistry:
 
 def default_registry() -> EngineRegistry:
     """Engines shipped with compose."""
-    registry = EngineRegistry()
-    try:
-        module = importlib.import_module("compose.engines.claude.adapter")
-    except ImportError:  # the Claude Code adapter is optional until it is installed
-        return registry
-    registry.register(module.ClaudeEngine())
-    return registry
+    from compose.engines.claude.adapter import ClaudeEngine
+
+    return EngineRegistry({"claude": ClaudeEngine()})

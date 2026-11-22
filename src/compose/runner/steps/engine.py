@@ -38,10 +38,16 @@ async def run_engine(
     """Run one engine task, streaming its events into the trace and usage into ``record``."""
     settings = rc.engine_settings(settings_from)
     engine = rc.runner.engines.get(settings.engine)
+    budgets = [limits.max_cost_usd]
+    run_cap = rc.shared.run_limits.max_cost_usd
+    if run_cap is not None:
+        budgets.append(max(run_cap - rc.shared.spent_usd, 0.0))
+    caps = [b for b in budgets if b is not None]
     options = EngineOptions(
         model=settings.model,
         reasoning_effort=settings.reasoning_effort,
         max_turns=limits.max_turns,
+        max_cost_usd=min(caps) if caps else None,
         engine_options=settings.engine_options,
         env={**rc.env(), **(env or {})},
     )
