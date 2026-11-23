@@ -8,6 +8,7 @@ comment block; YAML can't keep the others).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +26,22 @@ KIND_ORDER: dict[str, int] = {"setup": 0, "gap": 1, "conflict": 1, "review": 2, 
 APPROVAL_OPTIONS = ("approve", "reject")
 
 
+class _Loader(yaml.SafeLoader):
+    """SafeLoader with YAML 1.2 booleans: only true/false, so an unquoted ``No, keep it``
+    or ``yes`` in a skill-written option stays the text it was meant to be."""
+
+
+_Loader.yaml_implicit_resolvers = {
+    first: [(tag, regexp) for tag, regexp in resolvers if tag != "tag:yaml.org,2002:bool"]
+    for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+}
+_Loader.add_implicit_resolver(
+    "tag:yaml.org,2002:bool",
+    re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"),
+    list("tTfF"),
+)
+
+
 class Question(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -33,6 +50,7 @@ class Question(BaseModel):
     kind: Kind
     document: str | None = None
     question: str
+    details: list[str] = Field(default_factory=list)  # supporting points, one per item
     options: list[str] = Field(default_factory=list)
     recommended: str | None = None
     free_text: bool = True
@@ -58,7 +76,7 @@ def _read(path: Path) -> tuple[str, dict[str, Any]]:
             break
         header.append(line)
     try:
-        data = yaml.safe_load(text)
+        data = yaml.load(text, Loader=_Loader)  # noqa: S506 - a SafeLoader subclass
     except yaml.YAMLError as exc:
         raise InputError(f"{path}: not valid YAML: {exc}") from exc
     if data is None:
@@ -73,9 +91,45 @@ def _read(path: Path) -> tuple[str, dict[str, Any]]:
     return "".join(header), data
 
 
+def _as_text(value: Any) -> Any:
+    """An unquoted number in an option is still its text (``10`` → ``"10"``)."""
+    return str(value) if isinstance(value, int | float) and not isinstance(value, bool) else value
+
+
+def _repair(item: Any) -> None:
+    """Undo the usual slips of a hand-written entry, in place, so a re-save persists the fix.
+
+    Numbers in ``options`` and ``recommended`` become text. An unquoted flow list such as
+    ``[Yes, unittest per command, Something else]`` splits at its commas; when the
+    ``recommended`` text equals consecutive items joined with ``", "``, they are joined back
+    into the one option it names.
+    """
+    if not isinstance(item, dict):
+        return
+    if "recommended" in item:
+        item["recommended"] = _as_text(item["recommended"])
+    options = item.get("options")
+    if not isinstance(options, list):
+        return
+    options = [_as_text(o) for o in options]
+    recommended = item.get("recommended")
+    if isinstance(recommended, str) and recommended not in options and ", " in recommended:
+        for start in range(len(options)):
+            for end in range(start + 2, len(options) + 1):
+                parts = options[start:end]
+                if all(isinstance(p, str) for p in parts) and ", ".join(parts) == recommended:
+                    options[start:end] = [recommended]
+                    break
+            else:
+                continue
+            break
+    item["options"] = options
+
+
 def _parse(path: Path, raw: list[Any]) -> list[Question]:
     questions = []
     for index, item in enumerate(raw):
+        _repair(item)
         try:
             questions.append(Question.model_validate(item))
         except ValidationError as exc:

@@ -54,8 +54,16 @@ compose abort <run>
 - `-i name=value` sets an input; repeat it. `-i name=@file` reads the value from a file.
 - Without `--feature`, a run creates a new feature (named from `feature_name` or the first
   required text input) with its own branch and worktree.
-- In the foreground a run prints a line per step (`-v` adds each tool call). On a terminal
-  it asks for missing inputs and gate decisions; `--no-interactive` pauses at gates.
+- In the foreground a run prints a line per step. Under a model step it also prints a
+  `✎ <path>` line for each file the model writes or edits, and the model's commentary as
+  `» …` lines. On a terminal a live line shows the step's time and spend (tokens until the
+  engine reports the cost). `-v` adds every other tool call with a hint (`· Read docs/a.md`).
+  On a terminal it asks for missing inputs and gate decisions; `--no-interactive` pauses at
+  gates.
+- **Notifications**: compose sends a desktop notification when a run waits for answers or a
+  gate decision, completes or fails, in the foreground, detached or through the API. It uses
+  `osascript` on macOS, `notify-send` on Linux and a PowerShell toast on Windows. Turn it off
+  with `notifications: {enabled: false}` in the config, or `COMPOSE_NOTIFY=0`.
 - `--detach` runs in a background process and returns the run id at once. Its output goes
   to `~/.compose/runs/<run>/process.log`.
 - `resume` continues a paused or failed run. Completed steps are not run again; the failed
@@ -140,6 +148,8 @@ defaults:
   workflow: automated        # what compose run and compose build start when none is named
 clarity:
   branch: clarity            # the branch (and worktree) clarity runs work on
+notifications:
+  enabled: true              # desktop notifications (COMPOSE_NOTIFY=0 also turns them off)
 server:
   host: 127.0.0.1
   port: 8765

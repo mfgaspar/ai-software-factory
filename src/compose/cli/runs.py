@@ -17,13 +17,18 @@ from pathlib import Path
 from typing import Any
 
 import typer
+from rich.console import Console
+from rich.live import Live
+from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
+from compose import notify
 from compose.clarity.questions import Question
 from compose.cli.common import console, err_console, handle_errors, open_store, print_json
 from compose.core import procs
+from compose.core.config import load_config
 from compose.core.db import Database
 from compose.core.home import Home
 from compose.core.models import Repo, Run, RunStatus
@@ -112,9 +117,27 @@ def styled(status: str) -> Text:
     return Text(status, style=STATUS_STYLE.get(status, ""))
 
 
-def _interaction(interactive: bool) -> Interaction:
+def _interaction(
+    interactive: bool, progress: Progress | None = None, *, notifications: bool = True
+) -> Interaction:
     if not interactive:
         return Interaction()
+    asked_at: list[str | None] = [None]  # the questions step last notified about
+
+    def ask_with_notice(q: Question) -> str:
+        step = progress.current_step if progress is not None else None
+        if step is None or step != asked_at[0]:
+            asked_at[0] = step
+            notify.notify(f"waiting for your answers ({q.id})", configured=notifications)
+        return ask_question(q)
+
+    def paused(ask: Callable[..., Any]) -> Callable[..., Any]:
+        def call(*args: Any) -> Any:
+            if progress is not None:
+                progress.pause()
+            return ask(*args)
+
+        return call
 
     def ask_input(name: str, spec: InputSpec) -> str:
         label = f"{name} ({spec.description})" if spec.description else name
@@ -129,27 +152,37 @@ def _interaction(interactive: bool) -> Interaction:
 
     return Interaction(
         interactive=True,
-        ask_input=ask_input,
-        ask_gate=ask_gate,
-        ask_confirm=ask_confirm,
-        ask_question=ask_question,
+        ask_input=paused(ask_input),
+        ask_gate=paused(ask_gate),
+        ask_confirm=paused(ask_confirm),
+        ask_question=paused(ask_with_notice),
     )
 
 
+def _answer_hint(q: Question) -> str:
+    own = q.free_text and q.kind != "approval"
+    choices = "a number, your own words" if own else "a number"
+    if q.recommended:
+        return f"Answer: {choices}, or Enter for {q.recommended!r}"
+    return f"Answer: {choices}, or Enter to leave it for later"
+
+
 def ask_question(q: Question) -> str:
-    """Show a question with its numbered options and recommendation; Enter takes the
-    recommendation (or leaves the question for later when there's none)."""
+    """Show a question: its headline, supporting details, numbered options and
+    recommendation. Enter takes the recommendation (or leaves the question for later when
+    there's none); free-text questions take the person's own words too."""
     where = f" {q.document}" if q.document else ""
     console.print(f"[yellow]?[/yellow] [bold]{q.id}[/bold] [dim]{q.kind}{where}[/dim]")
     console.print(q.question, highlight=False, soft_wrap=True)
+    for detail in q.details:
+        console.print(f"  • {detail}", highlight=False, soft_wrap=True)
     for number, option in enumerate(q.options, 1):
         mark = " [green](recommended)[/green]" if option == q.recommended else ""
-        console.print(f"  {number}. {option}{mark}", highlight=False)
+        console.print(f"  {number}. {escape(option)}{mark}", highlight=False)
     if q.recommended and q.recommended not in q.options:
         console.print(f"  Recommended: {q.recommended}", highlight=False)
-    hint = f"Enter takes {q.recommended!r}" if q.recommended else "Enter skips it"
     while True:
-        text = str(typer.prompt(f"Answer ({hint})", default="", show_default=False)).strip()
+        text = str(typer.prompt(_answer_hint(q), default="", show_default=False)).strip()
         if not text:
             return q.recommended or ""
         if text.isdigit() and 1 <= int(text) <= len(q.options):
@@ -159,52 +192,163 @@ def ask_question(q: Question) -> str:
         console.print("[red]Choose one of the numbered options.[/red]")
 
 
-class Progress:
-    """Prints a line per step as a foreground run goes."""
+WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
+ENGINE_STEPS = frozenset({"command", "prompt"})
+HINT_KEYS = ("file_path", "notebook_path", "path", "pattern", "command", "url", "query")
 
-    def __init__(self, verbose: bool) -> None:
+
+def _first_line(text: str) -> str:
+    return next((line.strip() for line in text.splitlines() if line.strip()), "")
+
+
+def _clip_to(text: str, width: int) -> str:
+    return text if len(text) <= width else text[: max(width - 1, 1)] + "…"
+
+
+def _tokens(count: int) -> str:
+    return f"{count / 1000:.1f}k tokens" if count >= 1000 else f"{count} tokens"
+
+
+class _StatusLine:
+    """The transient ``<step> · 2m14s · $0.41`` line under a running model step."""
+
+    def __init__(self) -> None:
+        self.step = ""
+        self.started = 0.0
+        self.cost = 0.0
+        self.tokens = 0
+
+    def __rich__(self) -> Text:
+        import time
+
+        elapsed = duration(int((time.monotonic() - self.started) * 1000))
+        spent = money(self.cost) if self.cost else _tokens(self.tokens) if self.tokens else ""
+        parts = [self.step, elapsed] + ([spent] if spent else [])
+        return Text(" · ".join(parts), style="dim")
+
+
+class Progress:
+    """Prints a line per step as a foreground run goes and, under a running model step, the
+    files it writes, its commentary and (in a terminal) a live time and cost line. With
+    ``verbose``, every other tool call too."""
+
+    def __init__(self, verbose: bool, out: Console | None = None) -> None:
         self.verbose = verbose
+        self.out = out
         self.depth: dict[str, int] = {}
+        self.workdir: Path | None = None
+        self.status = _StatusLine()
+        self.live: Live | None = None
+        self.current_step: str | None = None  # exec id of the step started last
+
+    @property
+    def console(self) -> Console:
+        return self.out or console
+
+    # ------------------------------------------------------------------ status line
+
+    def _start_status(self, step: str) -> None:
+        import time
+
+        if not self.console.is_terminal:
+            return
+        self.pause()
+        self.status = _StatusLine()
+        self.status.step = step
+        self.status.started = time.monotonic()
+        self.live = Live(self.status, console=self.console, transient=True, refresh_per_second=2)
+        self.live.start()
+
+    def pause(self) -> None:
+        """Stop the live line (before a prompt, at a step's end, when the run ends)."""
+        if self.live is not None:
+            self.live.stop()
+            self.live = None
+
+    close = pause
+
+    # ------------------------------------------------------------------ events
+
+    def _print(self, text: str) -> None:
+        self.console.print(text, highlight=False)
+
+    def _relative(self, path: str) -> str:
+        if self.workdir is not None:
+            try:
+                return str(Path(path).resolve().relative_to(self.workdir))
+            except (ValueError, OSError):
+                pass
+        return path
+
+    def _engine_event(self, event: dict[str, Any]) -> None:
+        inner = event.get("event") or {}
+        pad = "  " * (self.depth.get(event.get("exec_id") or "", 0) + 1)
+        kind = inner.get("kind")
+        width = max(self.console.width - len(pad) - 2, 20)
+        if kind == "tool_call":
+            name = str(inner.get("name") or "")
+            args = inner.get("input") or {}
+            if name in WRITE_TOOLS:
+                path = args.get("file_path") or args.get("notebook_path") or ""
+                self._print(f"{pad}[green]✎[/green] {escape(self._relative(str(path)))}")
+            elif self.verbose:
+                hint = next((str(args[k]) for k in HINT_KEYS if args.get(k)), "")
+                if hint and ("file_path" in args or "notebook_path" in args or "path" in args):
+                    hint = self._relative(hint)
+                shown = _clip_to(f"{name} {_first_line(hint)}".strip(), width)
+                self._print(f"{pad}[dim]· {escape(shown)}[/dim]")
+        elif kind == "message":
+            line = _first_line(str(inner.get("text") or ""))
+            if line:
+                self._print(f"{pad}[dim]» {escape(_clip_to(line, width))}[/dim]")
+        elif kind == "usage_update":
+            usage = inner.get("usage") or {}
+            self.status.cost = float(usage.get("cost_usd") or 0)
+            self.status.tokens = int(usage.get("input_tokens") or 0) + int(
+                usage.get("output_tokens") or 0
+            )
 
     def __call__(self, event: dict[str, Any]) -> None:
         kind = event.get("type")
-        if kind == "step_started":
+        if kind == "run_started" and event.get("worktree") and self.workdir is None:
+            self.workdir = Path(str(event["worktree"])).resolve()
+        elif kind == "step_started":
             parent = event.get("parent_exec_id")
             depth = self.depth[parent] + 1 if parent in self.depth else 0
             self.depth[event.get("exec_id", "")] = depth
-            console.print(
-                f"{'  ' * depth}[cyan]▸[/cyan] {event.get('key') or event.get('step_id')}"
-                f" [dim]{event.get('step_type') or ''}[/dim]",
-                highlight=False,
+            self.current_step = event.get("exec_id")
+            name = event.get("key") or event.get("step_id")
+            self._print(
+                f"{'  ' * depth}[cyan]▸[/cyan] {name} [dim]{event.get('step_type') or ''}[/dim]"
             )
+            if event.get("step_type") in ENGINE_STEPS:
+                self._start_status(str(name))
         elif kind == "step_finished":
+            self.pause()
             status = str(event.get("status"))
             pad = "  " * self.depth.get(event.get("exec_id", ""), 0)
             cost = event.get("cost_usd") or 0
             extra = f" [dim]{money(cost)}[/dim]" if cost else ""
             shown = event.get("error") and status != "paused"
-            error = f" [red]{event['error']}[/red]" if shown else ""
+            error = f" [red]{escape(str(event['error']))}[/red]" if shown else ""
             style = STATUS_STYLE.get(status, "")
-            console.print(
+            self._print(
                 f"{pad}[{style}]{SYMBOL.get(status, '·')}[/{style}] {event.get('step_id')}"
-                f" [{style}]{status}[/{style}]{extra}{error}",
-                highlight=False,
+                f" [{style}]{status}[/{style}]{extra}{error}"
             )
-        elif kind == "engine_event" and self.verbose:
-            inner = event.get("event") or {}
-            if inner.get("kind") == "tool_call":
-                console.print(f"    [dim]· {inner.get('name')}[/dim]", highlight=False)
+        elif kind == "engine_event":
+            self._engine_event(event)
         elif kind == "gate_waiting":
-            console.print(
+            self.pause()
+            self._print(
                 f"[yellow]⏸ waiting at gate {event.get('step_id')}:[/yellow]"
-                f" {event.get('message')} ({'/'.join(event.get('options') or [])})",
-                highlight=False,
+                f" {escape(str(event.get('message')))} ({'/'.join(event.get('options') or [])})"
             )
         elif kind == "questions_waiting":
-            console.print(
+            self.pause()
+            self._print(
                 f"[yellow]⏸ waiting for answers at {event.get('step_id')}:[/yellow]"
-                f" {', '.join(event.get('ids') or [])}",
-                highlight=False,
+                f" {', '.join(event.get('ids') or [])}"
             )
 
 
@@ -212,13 +356,24 @@ def _make_runner(
     db: Database, home: Home, *, interactive: bool, progress: Progress | None
 ) -> Runner:
     recover_stale_runs(db, home)
+    config = load_config(home)
     return Runner(
         db,
         home,
         engines=engine_registry(),
-        interaction=_interaction(interactive),
+        interaction=_interaction(interactive, progress, notifications=config.notifications.enabled),
         on_event=progress,
+        config=config,
     )
+
+
+def run_foreground(runner: Runner, run_id: str, progress: Progress | None) -> None:
+    """Execute a run in this process, then clear the live status line."""
+    try:
+        asyncio.run(runner.execute(run_id))
+    finally:
+        if progress is not None:
+            progress.close()
 
 
 def _is_interactive(flag: bool | None, as_json: bool) -> bool:
@@ -302,7 +457,7 @@ def follow(
             f"Run [bold]{created.id}[/bold]: {created.workflow_id} on {on}",
             highlight=False,
         )
-    asyncio.run(runner.execute(created.id))
+    run_foreground(runner, created.id, progress)
     _finish(db, home, created.id, as_json, warnings=warnings, after=after)
 
 
@@ -355,7 +510,12 @@ def _print_questions(pending: list[dict[str, Any]]) -> None:
             highlight=False,
             soft_wrap=True,
         )
-    console.print('Answer with: compose clarity answer <ID> "<answer>"', highlight=False)
+        for detail in q.get("details") or []:
+            console.print(f"      • {detail}", highlight=False, soft_wrap=True)
+    console.print(
+        'Answer with: compose clarity answer <ID> "<answer>" (an option or your own words)',
+        highlight=False,
+    )
 
 
 def _repo_or_none(db: Database, ref: str | None) -> Repo | None:
@@ -436,7 +596,7 @@ def resume(
             else:
                 console.print(f"Resumed run [bold]{run_.id}[/bold] in the background.")
             return
-        asyncio.run(runner.execute(run_.id))
+        run_foreground(runner, run_.id, progress)
         _finish(db, home, run_.id, as_json)
 
 

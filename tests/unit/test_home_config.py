@@ -32,6 +32,7 @@ def test_config_defaults(home: Home) -> None:
     assert config.server.port == 8765
     assert config.server.token is None
     assert config.defaults.engine == "claude"
+    assert config.notifications.enabled is True
 
 
 def test_config_file_values(home: Home) -> None:
@@ -39,6 +40,11 @@ def test_config_file_values(home: Home) -> None:
     config = load_config(home)
     assert config.server.port == 9000
     assert config.defaults.model == "m1"
+
+
+def test_config_turns_notifications_off(home: Home) -> None:
+    home.config_path.write_text("notifications: {enabled: false}\n")
+    assert load_config(home).notifications.enabled is False
 
 
 def test_config_token_env_override(home: Home, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -59,6 +65,7 @@ def test_config_empty_file(home: Home) -> None:
         ("- a\n- b\n", "top level must be a mapping"),
         ("server:\n  prot: 1\n", "server.prot"),
         ("server:\n  port: 70000\n", "server.port"),
+        ("notifications:\n  sound: true\n", "notifications.sound"),
     ],
 )
 def test_config_errors(home: Home, content: str, expected: str) -> None:

@@ -386,7 +386,15 @@ def test_orchestrator_modes_and_phases() -> None:
     for word in ("interactive", "auto", "mixed", "draft", "apply"):
         assert f"`{word}`" in body, word
     assert "`mixed` (default)" in body and "run **mixed**: it is the default" in body
-    for key in ("questions.yml", "obsolete", "round", "`setup`", "`review`", "`approval`"):
+    for key in (
+        "questions.yml",
+        "obsolete",
+        "round",
+        "`details`",
+        "`setup`",
+        "`review`",
+        "`approval`",
+    ):
         assert key in body, key
     assert "COMPOSE_RUN_ID" in body and "never ask anything" in body
     assert "**4** rounds" in body

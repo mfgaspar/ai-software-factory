@@ -76,8 +76,10 @@ A `mixed` run is the built-in `clarity` workflow:
 4. **validate** (`/clarity-validate`); compose records the verdict, commits, and on PASS merges
    (see [The clarity branch](#the-clarity-branch)).
 
-On a terminal in the foreground, compose asks each question there: it shows the options and
-the recommendation, and Enter takes the recommendation. Otherwise (`-d`, `--no-interactive`,
+On a terminal in the foreground, compose asks each question there: it shows the question,
+its details as bullets, the numbered options and the recommendation. You answer with a
+number, your own words (any question but an approval), or Enter for the recommendation.
+compose sends a desktop notification when it starts asking. Otherwise (`-d`, `--no-interactive`,
 the API) the run **pauses** at the questions step until they're answered.
 
 Approvals never hold a run. A run doesn't wait for an absent approver: when only approvals are
@@ -99,6 +101,9 @@ questions:
     kind: gap                      # setup | gap | conflict | review | approval
     document: product/prd.md       # null for setup questions
     question: "The PRD says 3 user roles; the code has 2. Which is right?"
+    details:                       # optional: supporting points, shown as bullets
+      - "prd.md lists admin, editor and viewer."
+      - "The code only checks admin and viewer."
     options: ["3 roles (PRD)", "2 roles (code)"]   # may be empty: free text
     recommended: "3 roles (PRD)"   # may be null
     free_text: true                # false: the answer must be one of the options

@@ -161,3 +161,14 @@ def test_round_trip_keeps_the_skills_fields(tmp_path: Path) -> None:
     assert list(after["questions"][0]) == list(item)
     assert after["questions"][1]["answer"] == "a monorepo"
     assert list(after["questions"][1])[:3] == ["id", "round", "kind"]
+
+
+def test_details_load_default_empty_and_survive_record(tmp_path: Path) -> None:
+    path = _write(
+        tmp_path, _q("Q-1", details=["known: the brief", "changes: the scope"]), _q("Q-2")
+    )
+    first, second = questions.load(path)
+    assert first.details == ["known: the brief", "changes: the scope"] and second.details == []
+    questions.record(path, {"Q-1": "confirm"}, "ana", AT)
+    saved = yaml.safe_load(path.read_text())["questions"][0]
+    assert saved["details"] == ["known: the brief", "changes: the scope"]

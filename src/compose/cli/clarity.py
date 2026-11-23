@@ -7,7 +7,6 @@ source named like a subcommand needs ``./`` (``compose clarity ./status``).
 
 from __future__ import annotations
 
-import asyncio
 import subprocess
 import sys
 from enum import StrEnum
@@ -28,6 +27,7 @@ from compose.cli.runs import (
     _is_interactive,
     _make_runner,
     follow,
+    run_foreground,
     spawn,
     styled,
 )
@@ -280,9 +280,13 @@ def questions_(
         options = " | ".join(q.options)
         if q.approver:
             options += f" (approver: {q.approver})"
-        table.add_row(q.id, q.kind, q.document or "", q.question, options, q.recommended or "")
+        text = "\n".join([q.question, *(f"• {d}" for d in q.details)])
+        table.add_row(q.id, q.kind, q.document or "", text, options, q.recommended or "")
     console.print(table)
-    console.print('Answer with: compose clarity answer <ID> "<answer>"', highlight=False)
+    console.print(
+        'Answer with: compose clarity answer <ID> "<answer>" (an option or your own words)',
+        highlight=False,
+    )
 
 
 @app.command("answer")
@@ -330,7 +334,7 @@ def answer(
             return
         if not as_json:
             console.print(f"Recorded {question_id}; resuming run {run.id}", highlight=False)
-        asyncio.run(runner.execute(run.id))
+        run_foreground(runner, run.id, progress)
         _finish(db, home, run.id, as_json, after=_after(db, as_json, fail_exit=False))
 
 

@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from compose import notify
 from compose.clarity import branch as clarity_branch
 from compose.clarity import preflight
 from compose.clarity.questions import Question
@@ -992,12 +993,14 @@ class Runner:
             state.current_step_id = None
             self._set_status(run, state, files, RunStatus.COMPLETED)
             rc.emit("run_finished", status="completed", outputs=outputs)
+            self._notify(rc, "completed")
         except RunPaused as paused:
             run.error = paused.reason
             state.error = paused.reason
             self._commit_clarity(rc, RunStatus.PAUSED)
             self._set_status(run, state, files, RunStatus.PAUSED)
             rc.emit("run_paused", step_id=paused.step_id, reason=paused.reason)
+            self._notify(rc, self._waiting_for(rc, paused))
             if raise_on_stop:
                 raise
         except RunAborted as aborted:
@@ -1014,6 +1017,33 @@ class Runner:
             self._commit_clarity(rc, RunStatus.FAILED)
             self._set_status(run, state, files, RunStatus.FAILED)
             rc.emit("run_finished", status="failed", error=str(failed))
+            self._notify(rc, f"failed at {run.current_step_id or 'a step'}")
+
+    def _notify(self, rc: RunContext, what: str) -> None:
+        """A desktop notification for a root run that waits for a person or ends."""
+        if rc.run.parent_run_id is not None:
+            return  # the root run notifies for its called workflows
+        notify.notify(f"{self.run_label(rc)} {what}", configured=self.config.notifications.enabled)
+
+    @staticmethod
+    def run_label(rc: RunContext) -> str:
+        """``clarity on wc-lite`` or ``automated on wc-lite (001-word-count)``."""
+        feature = f" ({rc.feature.name})" if rc.feature is not None else ""
+        return f"{rc.run.workflow_id} on {rc.repo.name}{feature}"
+
+    def _waiting_for(self, rc: RunContext, paused: RunPaused) -> str:
+        from compose.tracking import views  # tracking reads the runner's files
+
+        try:
+            asked = views.waiting_questions(self.home, rc.run)
+            if asked:
+                return f"is waiting for your answers ({', '.join(q['id'] for q in asked)})"
+            gate = views.waiting_gate(self.home, rc.run)
+        except Exception:  # the notification falls back on the pause reason
+            gate = None
+        if gate and gate.get("message"):
+            return f"is waiting at gate {gate['step_id']}: {gate['message']}"
+        return f"is paused: {paused.reason}"
 
     def _commit_clarity(self, rc: RunContext, status: RunStatus) -> None:
         """A clarity run that stops keeps what it wrote: commit the clarity paths on its

@@ -25,6 +25,7 @@ def compose_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.delenv("COMPOSE_FEATURE", raising=False)
     monkeypatch.delenv("COMPOSE_RUN_ID", raising=False)
+    monkeypatch.setenv("COMPOSE_NOTIFY", "0")  # no desktop notifications from tests
     return home
 
 

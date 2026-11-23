@@ -251,10 +251,15 @@ these fields:
   file plus one (1 for an empty file), so rounds keep counting across runs.
 - `kind`: `setup`, `gap`, `conflict`, `review` or `approval`.
 - `document`: the path relative to `.clarity/`, or null for setup questions.
-- `question`: plain language, for a person who hasn't seen the files. Say what is known, what
-  is missing or conflicting, and what the answer changes. No manifest, hash or stage talk.
-- `options`: the likely answers (may be empty), and `recommended`: your pick among them, or
-  null.
+- `question`: one or two sentences, in plain language, for a person who hasn't seen the
+  files: what you need them to decide. No manifest, hash or stage talk.
+- `details`: the supporting points, one short item each, shown as bullets: what is known and
+  from where, what is missing or conflicting, and what the answer changes. Use it instead of
+  packing these into `question`; it may be empty for a simple question.
+- `options`: the likely answers, as real alternatives a person could pick without typing
+  (for example `also require solution/architecture.md`), and `recommended`: your pick among
+  them, or null. `confirm` alone is not a choice: add the likeliest alternatives whenever
+  there are any. The person can always answer in their own words when `free_text` is true.
 - `free_text`: `true` for setup, gap, conflict and review questions. Approval questions have
   options `[approve, reject]` and `free_text: false`.
 - `approver`: approval questions only, the name exactly as `.clarity/config.yml` lists it;
@@ -279,8 +284,12 @@ Unattended: never ask anything. Run steps 0–5 in drafting-only form:
 2. **Step 2, configure in proposal form.** Invoke `clarity-configure` with `draft`. It writes
    the proposed `.clarity/config.yml` and returns a short summary: the proposed mandatory set,
    the N/A candidates with their evidence, the approvers named so far, and any custom
-   documents. Raise **one** `setup` question quoting that summary and asking to confirm or
-   correct it, and who approves what (options `[confirm]`, recommended `confirm`). Raise none
+   documents. Raise **one** `setup` question asking to confirm or correct it, and who
+   approves what. Put the summary in `details`, one item each for the mandatory set, the N/A
+   candidates, the approvers and any custom documents. Options: `confirm` (recommended), plus
+   up to three of the likeliest changes, such as `also require <document>` for the documents
+   the sources touch but the proposal leaves out, or `no approvers needed` when approvers are
+   named. Raise none
    when the setup was already agreed (a `Setup agreed` line in `notes.md`) and the manifest has
    nothing new.
 3. **Steps 3–4** as written. Use the proposed config for the effective manifest. For a
@@ -328,9 +337,12 @@ Then, in a new round:
 1. **Recheck once.** Run step 6 unattended. Don't re-confirm anything: documents that are stale
    or edited go into **one** new `review` question that says what changed.
 2. **Review.** When no setup, gap, conflict or review question is pending and some mandatory
-   document isn't complete or n/a, raise **one** `review` question (options `[confirm]`,
-   `free_text: true`). It summarizes the foundation in a few lines per mandatory document:
-   what it says, what was inferred and from where, and the N/A list with reasons.
+   document isn't complete or n/a, raise **one** `review` question (`free_text: true`). The
+   question asks to confirm the foundation or say what to correct. Its `details` summarize it,
+   one item per mandatory document: what it says, what was inferred and from where; then one
+   item for the N/A list with reasons. Options: `confirm` (recommended), plus a named
+   correction for each weak inference worth a look (for example `NFR-001: make it 5 s, not
+   1 s`), at most three.
 3. **Approvals.** After a confirmed review, when every mandatory document is complete or n/a,
    raise one `approval` question per configured approver and document set (each entry of the
    config's `approvals`) whose approval is missing or outdated, unless one is already pending.
@@ -347,8 +359,8 @@ person in this conversation:
 
 1. Run `draft`.
 2. Ask the pending questions here, in the file's order, a few at a time, in plain words. Show
-   the options and the recommendation; the person can accept it, pick another option or answer
-   in their own words. Ask an approval question only of its approver: ask the person's name
+   each question with its `details` as bullets, then the options and the recommendation; say
+   that the person can accept it, pick another option or answer in their own words. Ask an approval question only of its approver: ask the person's name
    once, and accept it if it matches (ignoring case), as `clarity-approve` does. Approvals of
    people who aren't here stay pending.
 3. Record each answer in `.clarity/questions.yml`: `answer`, `answered_by` (the person's name,

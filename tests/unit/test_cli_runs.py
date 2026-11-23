@@ -137,7 +137,8 @@ def test_foreground_progress(
     assert result.exit_code == 0, result.output
     out = result.output
     assert "▸ build prompt" in out and "✓ build completed $0.4200" in out
-    assert "· Write" in out  # --verbose shows tool calls
+    assert "» Writing the app." in out  # the model's commentary
+    assert "✎ app.py" in out  # the files it writes, relative to the worktree
     assert "completed  $0.4200, 2 files +4 -0" in out
 
 
