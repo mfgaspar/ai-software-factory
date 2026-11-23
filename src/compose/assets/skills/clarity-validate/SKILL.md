@@ -72,6 +72,11 @@ two `---` lines):
    decisions) its ADRs. For each listed name, look for an entry in the document's `approvals`
    with that `by` and a `hash` equal to the document's current body hash. Name every approver
    without a valid approval. An approval with an old hash is **outdated**, not missing.
+   An answered approval question in `.clarity/questions.yml` is also a valid approval, with
+   the same hash rule: `kind: approval`, not `obsolete`, `answer: approve`, `answered_by`
+   equal to its `approver` and to the listed name (`answered_at` is its date), and the hash
+   recorded for this document under its `hashes` equal to the current body hash. Otherwise it
+   doesn't count. Never read the file's other questions as approvals.
 7. **complete**: none of the above.
 
 Kind-specific completeness, checked as part of step 3 (draft):

@@ -1,12 +1,13 @@
 ---
 name: clarity-configure
 description: Agree with the user which clarity documents this project needs, which don't apply and why, any custom documents, and who approves what, then write .clarity/config.yml. The first step of /clarity; run alone to change the setup.
-argument-hint: "[short-cuts like 'mandatory: PRD, API only'] [auto]"
+argument-hint: "[short-cuts like 'mandatory: PRD, API only'] [auto|draft|apply]"
 ---
 
 # Configure the clarity documents for this project
 
-What the user asked for (it may be empty, a short-cut, or `auto`):
+What the user asked for (it may be empty, a short-cut, `auto`, `draft`, or `apply` with a setup
+answer):
 
 ```text
 $ARGUMENTS
@@ -74,10 +75,38 @@ its reason (a person must decide N/A), with no approvers, and with custom docume
 the user named them. Say in one line what you proposed and that it needs a person's
 confirmation.
 
+## `draft`: proposal form
+
+`/clarity` passes `draft` in its unattended phase. Ask nothing; a person confirms later,
+through a `setup` question that `/clarity` raises.
+
+1. **Re-run check.** If `.clarity/config.yml` exists, `notes.md` has a `Setup agreed` line,
+   and the manifest has no document the config doesn't know, change nothing and return "setup
+   already agreed".
+2. **Propose and write** as in `auto` mode above: inferred N/A candidates **commented out**
+   with their reasons, approvers only when the inputs or arguments name them, custom documents
+   only when named. Apply short-cuts from the arguments. Run the step 4 checks before saving.
+3. **Return the summary** that the setup question quotes, in plain words and a few lines: the
+   proposed mandatory set, each N/A candidate with its evidence, the approvers (or "none named
+   yet: who should sign off what?"), and any custom documents. Don't add the `Setup agreed`
+   line.
+
+## `apply`: a setup answer
+
+`/clarity` passes `apply` with the answer to its setup question, and who gave it. Ask nothing.
+
+- `confirm`: make the proposal real. Uncomment the N/A candidates the summary listed.
+- Anything else: apply it as if the person had said it in step 2 (N/A choices, mandatory
+  changes, custom documents, approvers, exactly as named), and keep the rest of the proposal.
+
+Run the step 4 checks, then add `Setup agreed <date>: <summary> (<question id>, <name>)` to
+`.clarity/notes.md`. A person's answer is the confirmation that N/A needs.
+
 ## Rules
 
 - Never mark a document N/A without a reason the user gave or confirmed.
 - Never add approvers the user didn't name.
 - This skill changes only `.clarity/config.yml`, any custom templates under
-  `.clarity/templates/`, and the one line in `.clarity/notes.md`.
+  `.clarity/templates/`, and the one line in `.clarity/notes.md`. It never writes
+  `.clarity/questions.yml`: `/clarity` raises the setup question.
 - When `/clarity` called you, return to it. Otherwise suggest running `/clarity` to continue.

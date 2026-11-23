@@ -379,3 +379,38 @@ def test_compose_steps_follow_clarity() -> None:
         assert "clarity.md" in body or "clarity.guide" in body, name
     assert "**Serves**" in (ASSETS / "templates" / "compose" / "spec.md").read_text()
     assert "### Clarity check" in (ASSETS / "templates" / "compose" / "plan.md").read_text()
+
+
+def test_orchestrator_modes_and_phases() -> None:
+    body = skill_body("clarity")
+    for word in ("interactive", "auto", "mixed", "draft", "apply"):
+        assert f"`{word}`" in body, word
+    assert "`mixed` (default)" in body and "run **mixed**: it is the default" in body
+    for key in ("questions.yml", "obsolete", "round", "`setup`", "`review`", "`approval`"):
+        assert key in body, key
+    assert "COMPOSE_RUN_ID" in body and "never ask anything" in body
+    assert "**4** rounds" in body
+    assert "only** from a recorded `confirm` review answer" in body
+
+
+def test_questions_file_is_a_companion() -> None:
+    assert MANIFEST["companions"]["questions.yml"] == "questions.yml"
+    data = yaml.safe_load((TEMPLATES / "questions.yml").read_text())
+    assert data == {"questions": []}
+
+
+def test_skills_know_the_questions_file() -> None:
+    configure = skill_body("clarity-configure")
+    assert "`draft`: proposal form" in configure and "setup" in configure
+    for skill in ("clarity-approve", "clarity-validate"):
+        body = skill_body(skill)
+        assert "questions.yml" in body, skill
+        assert "answered_by" in body and "answered_at" in body, skill
+
+
+def test_constitution_from_clarity() -> None:
+    body = (SKILLS / "compose-constitution" / "SKILL.md").read_text()
+    assert "from-clarity" in body
+    assert "Never ask questions" in body
+    assert "generated-from-clarity" in body and "Never write or compute that" in body
+    assert "from-clarity" in (ASSETS / "templates" / "compose" / "clarity.md").read_text()

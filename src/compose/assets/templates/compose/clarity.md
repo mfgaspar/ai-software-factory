@@ -35,6 +35,13 @@ The status is what the document declares. It's not a full check: `/clarity-valid
 | tasks | `failures/failures.md`, `goal/requirements.md` (STD), `ops/setup-guide.md` | Add a task for each failure mitigation that touches this feature, the tests the standards require, and any setup or configuration step. |
 | analyze | all of the above | Check that the spec cites the goal it serves, the plan breaks no NFR, standard or accepted ADR, and the tasks cover the mitigations. |
 
+## The constitution
+
+In a clarity repo, the constitution is generated: `/compose-constitution from-clarity`
+regenerates the whole file from the documents in the constitution row above, and compose
+stamps its first line with the clarity fingerprint it came from. Hand edits are overwritten by
+the next clarity run; change the clarity documents instead.
+
 ## Citing
 
 - **Spec:** under the feature's summary, add a `Serves:` line with the goals (`G-###`) and the

@@ -52,12 +52,29 @@ as the approver gives it. They only exist for documents listed under `approvals`
    hash stays the same.
 7. **Report.** Say what was approved and by whom, and what is still waiting and on whom.
 
+## Answers in the questions file
+
+An answered approval question in `.clarity/questions.yml` is also a valid source of approval,
+with no person in the conversation. `/clarity` uses it in its `mixed` and `apply` phases. It
+counts only when all of these hold:
+
+- `kind: approval`, not `obsolete`, `answer: approve`;
+- `answered_by` equals the question's `approver`, and that name is listed in the config for
+  the document;
+- the hash rule: the document's current body hash equals the one recorded for it under the
+  question's `hashes` (so the approver saw this content), and step 3 doesn't refuse it.
+
+Record it as in step 6, with `by` = `answered_by`, `at` = the date of `answered_at`, and `hash`
+= the current body hash. When the hash no longer matches, or step 3 refuses the document,
+record nothing and report it: the document needs a new review and a new approval question. A
+`reject` answer records nothing. Never write the answer fields yourself.
+
 ## Rules
 
 - **Never approve on someone else's behalf.** Don't approve for an approver who isn't the
   person in this conversation, and don't fill in a name yourself.
-- `auto` mode (or any run with no person present) never records approvals. Report what is
-  pending and stop.
+- `auto` mode (or any run with no person present) never records approvals, except from an
+  answered approval question as described above. Report what is pending and stop.
 - A content edit voids the approvals on that document: their hash no longer matches. That is
   intended. Don't "carry over" an approval to new content.
 - When `/clarity` called you, return to it.

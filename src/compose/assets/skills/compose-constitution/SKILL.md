@@ -1,7 +1,7 @@
 ---
 name: compose-constitution
 description: Create or amend the project constitution (.compose/memory/constitution.md), the principles every compose feature plan is checked against, deriving them from the clarity documents in .clarity/ when the repo has them. Use when setting up a project's principles, changing them, or after the clarity documents change.
-argument-hint: "[principles or changes to make]"
+argument-hint: "[principles or changes to make | from-clarity]"
 ---
 
 # Create or amend the project constitution
@@ -50,6 +50,31 @@ $ARGUMENTS
 8. At the top of the constitution, add or replace an HTML comment with a sync report: old →
    new version, principles added/changed/removed, templates updated, open TODOs.
 9. Save the file.
+
+## `from-clarity`
+
+When the input is `from-clarity` (compose's clarity runs pass it, headless), regenerate the
+constitution from the clarity documents instead of amending it:
+
+- **Never ask questions.** Work from the files alone.
+- **Regenerate the whole file.** Read `.compose/templates/compose/clarity.md` and every
+  document it lists for the constitution step, and derive each principle and constraint from
+  them as step 3 says: every principle cites its source in brackets, only `complete` documents
+  and `accepted` ADRs are binding, and drafts become `TODO(clarity): confirm <source>`.
+  Nothing from the old file survives unless a clarity source still supports it. Keep its
+  `Ratified` date and version it against the old file (step 6).
+- **The header says it's generated.** Right under the title, one line: the file is generated
+  from `.clarity/` by `/compose-constitution from-clarity`, hand edits are overwritten by the
+  next clarity run, and changes belong in the clarity documents. Then the sync report comment
+  (step 8).
+- **Leave the first line to compose.** compose stamps the first line with
+  `<!-- generated-from-clarity: <fingerprint> -->` after this step. Never write or compute that
+  marker. If the old file starts with one, drop it: start the new file with the title.
+- Never edit `.clarity/`, and skip step 7's template changes.
+
+In a repo with `.clarity/` whose constitution starts with that marker, an ordinary amendment is
+overwritten by the next clarity run: say so, and suggest changing the clarity documents
+instead.
 
 ## Report
 
