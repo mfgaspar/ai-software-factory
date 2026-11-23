@@ -42,7 +42,7 @@ skills can still be run on their own to rework one document.
 |---|---|---|
 | `mixed` (default) | `draft`, then the pending questions asked in this conversation, then `apply`, repeated | yes, only the questions in the questions file |
 | `interactive` | the stage-by-stage conversation of **The flow**, steps 0–8 | yes, throughout |
-| `auto` | `draft` only | never |
+| `auto` | `draft`, then step 8 (validate) | never |
 | `draft` | steps 0–5 in drafting-only form, raising questions instead of asking them | never |
 | `apply` | applies the answered questions, then raises the next ones | never |
 
@@ -367,9 +367,12 @@ doesn't use the questions file.
 
 ### `auto`
 
-Use `auto` when the user says "just draft everything". It runs `draft` only and never asks.
-Its questions stay in the file, for a later `/clarity` (mixed) run, or for
-`compose clarity answer`. Finish with a short report of the pending questions.
+Use `auto` when the user says "just draft everything". It runs `draft`, never asks, and
+then runs step 8: invoke `clarity-validate` and end with its last line, which is always
+`CLARITY: FAIL (<n> incomplete)` because nothing is confirmed. Before that line, report the
+pending questions briefly. They stay in the file, for a later `/clarity` (mixed) run, or for
+`compose clarity answer`. (`draft`, which compose uses, does not validate: compose runs the
+validator as its own step.)
 
 `auto` **never** sets `status: complete` or `n/a`, never writes `reviewed` hashes, and never
 records approvals. Those need a person.
