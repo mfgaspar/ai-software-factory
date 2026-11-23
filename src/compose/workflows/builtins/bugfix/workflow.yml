@@ -2,7 +2,7 @@ schema_version: "1.0"
 workflow:
   id: bugfix
   name: Bug fix
-  version: 2.0.0
+  version: 2.1.0
   description: >
     Assess a bug report, review the assessment, then fix and test until the tests pass
     (up to 3 tries), and verify the fix.
@@ -42,7 +42,9 @@ steps:
   - id: fix-loop
     type: do-while
     max_iterations: 3
-    condition: "{{ steps.test.output.exit_code != 0 }}"
+    # retry while the tests fail, unless the fix changed no files (the same tests would
+    # fail the same way)
+    condition: "{{ steps.test.output.exit_code != 0 and steps.fix.changes.files > 0 }}"
     steps:
       - id: fix
         command: compose-bug-fix

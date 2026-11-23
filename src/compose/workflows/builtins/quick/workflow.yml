@@ -2,7 +2,7 @@ schema_version: "1.0"
 workflow:
   id: quick
   name: Quick spec to code
-  version: 1.2.0
+  version: 1.3.0
   description: Specify, plan, break into tasks and implement, then converge the code with the spec; no review gates.
 inputs:
   spec:
@@ -44,8 +44,11 @@ steps:
       - id: converge-loop
         type: do-while
         max_iterations: 3
-        # repeat while tasks.md still has open tasks after converge (and implement)
-        condition: "{{ steps.open-tasks.output.exit_code == 0 }}"
+        # repeat while tasks.md still has open tasks after converge (and implement),
+        # unless implement changed no files: another round would find the same gaps
+        condition: >-
+          {{ steps.open-tasks.output.exit_code == 0
+             and steps.implement-gaps.changes.files > 0 }}
         steps:
           - id: converge
             command: compose-converge

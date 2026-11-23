@@ -2,7 +2,7 @@ schema_version: "1.0"
 workflow:
   id: automated
   name: Compose Build Automated Flow
-  version: 1.2.0
+  version: 1.3.0
   author: gaspar
   description: >
     Chains specify, clarify, plan, find-skills (optional), tasks, analyze, implement and
@@ -177,11 +177,14 @@ steps:
 
   # Post-implement convergence loop: converge appends whatever is still missing to
   # tasks.md as open tasks; implement finishes them. It repeats while tasks.md still
-  # has open tasks, up to 3 rounds.
+  # has open tasks, up to 3 rounds, and stops early when implement changed no files
+  # (e.g. every command it needed was refused): another round would find the same gaps.
   - id: converge-loop
     type: do-while
     max_iterations: 3
-    condition: "{{ steps.open-tasks.output.exit_code == 0 }}"
+    condition: >-
+      {{ steps.open-tasks.output.exit_code == 0
+         and steps.implement-remaining.changes.files > 0 }}
     steps:
       - id: converge
         command: compose-converge

@@ -135,6 +135,42 @@ async def test_converge_stops_after_three_rounds(builtin: Env) -> None:
     assert len(builtin.exec_of(run, "implement-gaps")) == 3
 
 
+def stuck(task: EngineTask, cwd: Path, options: EngineOptions) -> Script:
+    """converge always reports a gap; implement is refused and changes nothing."""
+    tasks = f"specs/{options.env['COMPOSE_FEATURE']}/tasks.md"
+    if task.text == "compose-converge":
+        text = (cwd / tasks).read_text()
+        return Script(edit(tasks, text + "\n## Phase 9: Convergence\n- [ ] T90 Gap\n"))
+    if task.text == "compose-implement" and (cwd / tasks).exists():
+        return Script([Act(say="Couldn't run the tests: the command needs approval.")])
+    return skills(task, cwd, options)
+
+
+@pytest.mark.parametrize(
+    ("name", "step", "inputs"),
+    [
+        ("quick", "implement-gaps", {}),
+        (
+            "full-cycle",
+            "implement-gaps",
+            {"review_spec_verdict": "approve", "review_plan_verdict": "approve"},
+        ),
+        ("automated", "implement-remaining", {"skip_clarify": "true"}),
+    ],
+)
+async def test_converge_stops_when_implement_changes_nothing(
+    builtin: Env, name: str, step: str, inputs: dict[str, str]
+) -> None:
+    builtin.fake.scripts = stuck
+    run = await builtin.runner().start(
+        builtin.repo, workflow(name), {"spec": "Add login", **inputs}
+    )
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert called(builtin).count("compose-converge") == 1
+    (gaps,) = builtin.exec_of(run, step)
+    assert gaps.files_changed == 0
+
+
 async def test_converge_can_be_turned_off(builtin: Env) -> None:
     inputs = {"spec": "Add login", "converge": "false"}
     run = await builtin.runner().start(builtin.repo, workflow("quick"), inputs)
@@ -362,6 +398,23 @@ async def test_bugfix_gives_up_after_three_tries(builtin: Env) -> None:
     assert run.status is RunStatus.COMPLETED, run.error
     verify = builtin.fake.calls[-1][0]
     assert "exited with code 1" in (verify.args or "").replace("\n", " ")
+
+
+async def test_bugfix_stops_when_the_fix_changes_nothing(builtin: Env) -> None:
+    attempts = fixer(passes_on=None)
+
+    def refused_after_first(task: EngineTask, cwd: Path, options: EngineOptions) -> Script:
+        """The first fix attempt edits a file; later ones are refused and change nothing."""
+        if task.text == "compose-bug-fix" and (cwd / "attempt.txt").exists():
+            return Script([Act(say="Couldn't edit anything: the change needs approval.")])
+        return attempts(task, cwd, options)  # type: ignore[operator]
+
+    builtin.fake.scripts = refused_after_first
+    inputs = {**BUG, "review_assessment_verdict": "approve"}
+    run = await builtin.runner().start(builtin.repo, workflow("bugfix"), inputs)
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert called(builtin).count("compose-bug-fix") == 2
+    assert [t.output and t.output["exit_code"] for t in builtin.exec_of(run, "test")] == [1, 1]
 
 
 SKILLS_MD = """# Suggested skills

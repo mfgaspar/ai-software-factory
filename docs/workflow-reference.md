@@ -590,7 +590,7 @@ Run states: `created → running → completed | paused | failed | aborted`.
 | `full-cycle` | constitution (if missing) → specify → clarify (if `clarify`) → spec review gate → plan → plan review gate → tasks → analyze → implement → converge | `spec`, `feature_name`, `clarify`, `review_spec_verdict`, `review_plan_verdict`, `converge`, `allowed_tools` |
 | `clarity` (repo-scoped) | draft → (questions → apply), while non-approval questions are pending, at most 4 rounds, mixed only → constitution from clarity → validate → record verdict, commit, merge on PASS | `sources`, `mode` (`mixed` or `auto`) |
 | `clarity-validate` (repo-scoped) | validate → record verdict → constitution (on PASS, if out of date) → commit, merge on PASS | none |
-| `bugfix` | bug assess → assessment review gate → (bug fix → test) until the tests pass, at most 3 times → bug test (verify) | `report`, `test_command`, `feature_name`, `review_assessment_verdict`, `allowed_tools` |
+| `bugfix` | bug assess → assessment review gate → (bug fix → test) until the tests pass, at most 3 times and only while the fix changes files → bug test (verify) | `report`, `test_command`, `feature_name`, `review_assessment_verdict`, `allowed_tools` |
 
 Start the clarity workflows with `compose clarity` and `compose clarity validate` (see
 [Clarity and build](clarity.md)); `compose run clarity` works too. `compose build` starts
@@ -619,6 +619,9 @@ Node.js and network access; a failed install is recorded and the run carries on.
 which checks the code against the spec, plan, tasks and constitution and appends what is
 still missing to `tasks.md` as a new `Phase N: Convergence`. While `tasks.md` has open
 tasks, `implement-gaps` runs implement on them and converge checks again, up to 3 rounds.
+The loop stops early when implement changed no files, for example because every command
+it needed was refused: another round would only find the same gaps (in `automated` the
+step is `implement-remaining`).
 Each round's steps (`converge`, `open-tasks`, `implement-gaps`) show separately in
 `compose status`, with their own cost.
 
