@@ -271,6 +271,11 @@ these fields:
 - `hashes`: approval questions only, a map of each document the approval covers to its body
   hash when the question was raised.
 
+Write every text value (`question`, each `details` and `options` item, `recommended`,
+`answer`) as a double-quoted YAML string, for example `options: ["No, keep one at a time",
+"Yes"]`. Unquoted, a comma splits an option in two and `No`, `Yes`, `on` or a number stop
+being text.
+
 A question is **pending** while its `answer` is null and it isn't obsolete. Keep the file's
 leading comment block, and write questions in this order: setup, then gaps from `**Blocking:**
 yes` questions, then conflicts, then other gaps, then review, then approval. Never delete a

@@ -133,7 +133,10 @@ def _parse(path: Path, raw: list[Any]) -> list[Question]:
         try:
             questions.append(Question.model_validate(item))
         except ValidationError as exc:
-            raise InputError(f"{path}: question #{index + 1} is invalid: {exc}") from exc
+            raise InputError(
+                f"{path}: question #{index + 1} is invalid: {exc}\n"
+                'Write every text value in double quotes, e.g. options: ["No, keep it", "Yes"]'
+            ) from exc
     return questions
 
 

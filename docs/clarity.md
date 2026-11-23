@@ -117,6 +117,10 @@ questions:
 - **Rounds carry over**: a new pass numbers its round after the highest in the file. `draft`
   keeps older pending questions that still apply and marks the rest obsolete, so the
   questions of an auto run are asked by the next mixed run.
+- **Text values are quoted**, as above. compose reads the file with YAML 1.2 booleans, so an
+  unquoted `No` or `yes` stays text, and numbers in `options` become text. When an unquoted
+  list split an option at its commas, and `recommended` names the whole option, compose joins
+  it back together.
 - **Answers are checked**: with `free_text: false` the answer must be one of `options`.
   Setup, gap, conflict and review questions are free text. Approval questions take `approve`
   or `reject`, and only from their `approver`. A batch of answers is recorded all or nothing.

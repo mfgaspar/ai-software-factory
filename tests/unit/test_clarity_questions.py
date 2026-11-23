@@ -172,3 +172,68 @@ def test_details_load_default_empty_and_survive_record(tmp_path: Path) -> None:
     questions.record(path, {"Q-1": "confirm"}, "ana", AT)
     saved = yaml.safe_load(path.read_text())["questions"][0]
     assert saved["details"] == ["known: the brief", "changes: the scope"]
+
+
+# Unquoted flow lists as a model wrote them in a live run (todo-lite demo, Haiku).
+_UNQUOTED = """\
+questions:
+  - id: Q-005
+    round: 1
+    kind: gap
+    document: goal/requirements.md
+    question: "Can two commands run at once?"
+    options: [One at a time is fine, No, simultaneous commands must be handled]
+    recommended: One at a time is fine
+    free_text: true
+    answer: null
+  - id: Q-007
+    round: 1
+    kind: gap
+    document: goal/requirements.md
+    question: "How should it be tested?"
+    options: [Yes, unittest with at least one test per command, Something stricter]
+    recommended: Yes, unittest with at least one test per command
+    free_text: true
+    answer: null
+  - id: Q-010
+    round: 1
+    kind: gap
+    document: goal/requirements.md
+    question: "How many entries?"
+    options: [10, 10000, off]
+    recommended: 10000
+    free_text: false
+    answer: null
+"""
+
+
+def test_unquoted_yes_no_and_numbers_stay_text(tmp_path: Path) -> None:
+    path = tmp_path / "questions.yml"
+    path.write_text(_UNQUOTED)
+    q5, _, q10 = questions.load(path)
+    assert q5.options == ["One at a time is fine", "No", "simultaneous commands must be handled"]
+    assert q10.options == ["10", "10000", "off"] and q10.recommended == "10000"
+    assert questions.validate_answer(q10, "10000", "ana") == []
+
+
+def test_true_and_false_are_still_booleans(tmp_path: Path) -> None:
+    path = _write(tmp_path, _q("Q-1", obsolete=True, free_text=False, options=["a"]))
+    (q,) = questions.load(path)
+    assert q.obsolete is True and q.free_text is False
+
+
+def test_a_recommended_option_split_at_its_commas_is_joined_back(tmp_path: Path) -> None:
+    path = tmp_path / "questions.yml"
+    path.write_text(_UNQUOTED)
+    _, q7, _ = questions.load(path)
+    assert q7.options == ["Yes, unittest with at least one test per command", "Something stricter"]
+    assert q7.recommended in q7.options
+    questions.record(path, {"Q-005": "One at a time is fine"}, "ana", AT)
+    saved = yaml.safe_load(path.read_text())["questions"][1]
+    assert saved["options"] == q7.options  # the repair is saved with the next answer
+
+
+def test_an_invalid_question_says_to_quote(tmp_path: Path) -> None:
+    path = _write(tmp_path, _q("Q-1", options=[{"a": 1}]))
+    with pytest.raises(InputError, match="double quotes"):
+        questions.load(path)

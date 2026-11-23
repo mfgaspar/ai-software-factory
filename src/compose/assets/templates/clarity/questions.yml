@@ -3,4 +3,5 @@
 #
 # Skills write questions. compose writes only `answer`, `answered_by` and `answered_at`.
 # A question is pending while its `answer` is null (and it isn't `obsolete`).
+# Quote every text value: options: ["No, keep it", "Yes"]. Unquoted, a comma splits it.
 questions: []
