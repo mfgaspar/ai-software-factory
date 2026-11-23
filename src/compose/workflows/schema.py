@@ -471,6 +471,8 @@ class WorkflowMeta(EngineSettings):
     description: str | None = None
     limits: Limits = Field(default_factory=Limits)
     tracking: bool = True
+    # feature: each run works on a feature branch; repo: on the repo's clarity branch
+    scope: Literal["feature", "repo"] = "feature"
 
 
 class Requires(_Model):
@@ -550,6 +552,7 @@ class Workflow(_Model):
 
     def _check_expressions(self, step_ids: set[str]) -> list[str]:
         errors: list[str] = []
+        repo_scope = self.workflow.scope == "repo"
 
         def check(where: str, text: str, bare: bool, in_fan_out: bool, fan_in: bool) -> None:
             try:
@@ -569,6 +572,10 @@ class Workflow(_Model):
                     errors.append(f"{where}: 'item' is only available inside a fan-out step")
                 elif root == "fan_in" and not fan_in:
                     errors.append(f"{where}: 'fan_in' is only available in a fan-in step")
+                elif ref[:2] == ("context", "feature") and repo_scope:
+                    errors.append(
+                        f"{where}: a repo-scoped workflow has no feature (context.feature)"
+                    )
 
         for where, step, in_fan_out in self.iter_steps():
             for label, text, bare in step.template_strings():

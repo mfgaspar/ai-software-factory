@@ -34,9 +34,14 @@ class DefaultsConfig(_Section):
     workflow: str = "automated"  # what compose run starts when no workflow is named
 
 
+class ClarityConfig(_Section):
+    branch: str = Field(default="clarity", min_length=1)  # where clarity runs work
+
+
 class Config(_Section):
     server: ServerConfig = Field(default_factory=ServerConfig)
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
+    clarity: ClarityConfig = Field(default_factory=ClarityConfig)
     # default engine_options per engine, under the workflow's and step's own
     engines: dict[str, dict[str, Any]] = Field(default_factory=dict)
 

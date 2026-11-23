@@ -300,9 +300,9 @@ def run(
                 )
             return
         if progress is not None:
-            brief = views.run_brief(db, created)
+            on = views.run_brief(db, created)["feature"] or "clarity"
             console.print(
-                f"Run [bold]{created.id}[/bold]: {created.workflow_id} on {brief['feature']}",
+                f"Run [bold]{created.id}[/bold]: {created.workflow_id} on {on}",
                 highlight=False,
             )
         asyncio.run(runner.execute(created.id))
@@ -408,7 +408,7 @@ def status(
         for r in runs:
             table.add_row(
                 r["workflow_id"],
-                r["feature"] or "",
+                r["feature"] or "clarity",
                 styled(r["status"]),
                 r["current_step_id"] or "",
                 money(r["cost_usd"]),
@@ -436,8 +436,9 @@ def _print_detail(detail: dict[str, Any]) -> None:
             styled(detail["status"]),
         )
     )
+    where = f"feature {detail['feature']}" if detail["feature"] else "scope repo"
     console.print(
-        f"repo {detail['repo']}, feature {detail['feature']}\n"
+        f"repo {detail['repo']}, {where}\n"
         f"worktree {detail['worktree']}\nrun files {detail['run_dir']}",
         style="dim",
         highlight=False,

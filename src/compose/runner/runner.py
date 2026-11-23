@@ -12,6 +12,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from compose.clarity import branch as clarity_branch
 from compose.core import locks, store
 from compose.core.config import Config, load_config
 from compose.core.db import Database, utcnow
@@ -132,7 +133,7 @@ class RunContext:
         files: RunFiles,
         state: RunState,
         repo: Repo,
-        feature: Feature,
+        feature: Feature | None,
         worktree: Path,
         shared: Shared,
     ) -> None:
@@ -162,13 +163,20 @@ class RunContext:
     def workflow_dir(self) -> str:
         return self.state.workflow_dir or str(self.files.dir)
 
+    @property
+    def scope(self) -> str:
+        """``feature``, or ``repo`` for a run with no feature (e.g. clarity)."""
+        return "feature" if self.feature is not None else "repo"
+
     def env(self) -> dict[str, str]:
         env = {
             "COMPOSE_RUN_ID": self.run.id,
-            "COMPOSE_FEATURE": self.feature.name,
             "COMPOSE_REPO": self.repo.name,
+            "COMPOSE_SCOPE": self.scope,
             "COMPOSE_WORKFLOW_DIR": self.workflow_dir,
         }
+        if self.feature is not None:
+            env["COMPOSE_FEATURE"] = self.feature.name
         # skills call the compose CLI: make sure the one running this run is found first
         bin_dir = Path(sys.executable).parent
         if (bin_dir / "compose").exists():
@@ -184,16 +192,21 @@ class RunContext:
                 "run_id": self.run.id,
                 "workflow_dir": self.workflow_dir,
                 "worktree": str(self.worktree),
-                "repo": {"id": self.repo.id, "name": self.repo.name},
-                "feature": {
-                    "id": self.feature.id,
-                    "name": self.feature.name,
-                    "branch": self.feature.branch,
-                    "dir": f"{features.SPECS_DIR}/{self.feature.name}",
-                },
+                "repo": {"id": self.repo.id, "name": self.repo.name, "dir": str(self.worktree)},
+                "feature": self._feature_context(),
                 "constitution_exists": constitution.exists(),
             },
             **scope.extras,
+        }
+
+    def _feature_context(self) -> dict[str, Any] | None:
+        if self.feature is None:
+            return None
+        return {
+            "id": self.feature.id,
+            "name": self.feature.name,
+            "branch": self.feature.branch,
+            "dir": f"{features.SPECS_DIR}/{self.feature.name}",
         }
 
     def render(self, text: str, scope: Scope) -> Any:
@@ -694,14 +707,21 @@ class Runner:
         )
         definition = loaded.definition
         resolved = self.resolve_inputs(definition, inputs or {}, ask_missing=True)
-        feat = self._feature_for(repo, definition, resolved, feature)
-        held = locks.read_lock(self.db, locks.feature_lock_key(feat.id))
-        if held is not None and not locks.is_stale(held):
-            raise RunError(f"Feature {feat.name} already has an active run ({held.run_id})")
+        repo_scope = definition.workflow.scope == "repo"
+        if repo_scope:
+            if feature:
+                raise RunError(f"{definition.id} is a repo-scoped workflow; it takes no feature")
+            self._check_no_repo_run(repo)
+            feat = None
+        else:
+            feat = self._feature_for(repo, definition, resolved, feature)
+            held = locks.read_lock(self.db, locks.feature_lock_key(feat.id))
+            if held is not None and not locks.is_stale(held):
+                raise RunError(f"Feature {feat.name} already has an active run ({held.run_id})")
         run = Run(
             id=new_id("run"),
             repo_id=repo.id,
-            feature_id=feat.id,
+            feature_id=feat.id if feat else None,
             workflow_id=definition.id,
             workflow_version=definition.workflow.version,
             inputs=resolved,
@@ -711,8 +731,30 @@ class Runner:
         state = RunState(workflow_dir=str(loaded.directory), workflow_source=loaded.source)
         files.write_state(state)
         store.insert(self.db, run)
-        files.append_event({"type": "run_created", "run_id": run.id, "feature": feat.name})
+        if feat is None:
+            files.append_event(
+                {"type": "run_created", "run_id": run.id, "feature": None, "scope": "repo"}
+            )
+        else:
+            files.append_event({"type": "run_created", "run_id": run.id, "feature": feat.name})
         return run
+
+    def _check_no_repo_run(self, repo: Repo) -> None:
+        """One active repo-scoped run per repo, paused ones included."""
+        row = self.db.conn.execute(
+            "SELECT id, status FROM runs WHERE repo_id = ? AND feature_id IS NULL"
+            " AND parent_run_id IS NULL AND status IN (?, ?) ORDER BY created_at LIMIT 1",
+            (repo.id, RunStatus.RUNNING.value, RunStatus.PAUSED.value),
+        ).fetchone()
+        held = locks.read_lock(self.db, locks.repo_lock_key(repo.id))
+        active = row[0] if row is not None else None
+        if active is None and held is not None and not locks.is_stale(held):
+            active = held.run_id
+        if active is not None:
+            raise RunError(
+                f"Repo {repo.name} already has an active clarity run ({active}); answer it,"
+                f" or compose abort {active}"
+            )
 
     def create_child_run(
         self,
@@ -726,7 +768,7 @@ class Runner:
         run = Run(
             id=new_id("run"),
             repo_id=parent.repo.id,
-            feature_id=parent.feature.id,
+            feature_id=parent.feature.id if parent.feature else None,
             workflow_id=loaded.id,
             workflow_version=loaded.definition.workflow.version,
             inputs=resolved,
@@ -823,17 +865,22 @@ class Runner:
             )
         repo = store.get(self.db, Repo, run.repo_id)
         feature = store.get(self.db, Feature, run.feature_id) if run.feature_id else None
-        if repo is None or feature is None:
+        repo_scope = definition.workflow.scope == "repo"
+        if repo is None or (feature is None and not repo_scope):
             raise RunError(f"Run {run_id} has no repo or feature record")
-        try:
-            lock = locks.acquire(self.db, locks.feature_lock_key(feature.id), run_id=run.id)
-        except locks.LockHeld as exc:
-            raise RunError(
-                f"Feature {feature.name} already has an active run ({exc.info.run_id})"
-            ) from exc
+        lock = self._lock(run, repo, feature)
         lock.keep_alive()
         try:
-            worktree = ensure_feature_worktree(self.db, self.home, repo, feature)
+            if feature is not None:
+                worktree = ensure_feature_worktree(self.db, self.home, repo, feature)
+            else:
+                worktree = clarity_branch.ensure_worktree(
+                    self.home,
+                    repo,
+                    branch=self.config.clarity.branch,
+                    update=run.status is RunStatus.CREATED,
+                )
+            state.workdir = str(worktree)
             self._install_engines(definition, worktree)
             run.abort_requested = False
             state.error = None
@@ -846,7 +893,10 @@ class Runner:
                 call_stack=[definition.id],
             )
             rc = RunContext(self, run, definition, files, state, repo, feature, worktree, shared)
-            rc.emit("run_started", feature=feature.name, worktree=str(worktree))
+            if feature is not None:
+                rc.emit("run_started", feature=feature.name, worktree=str(worktree))
+            else:
+                rc.emit("run_started", feature=None, scope="repo", worktree=str(worktree))
             watcher = asyncio.create_task(self._watch_abort(run.id, shared))
             try:
                 await self._drive(rc)
@@ -857,6 +907,17 @@ class Runner:
         finally:
             lock.release()
         return rc.run
+
+    def _lock(self, run: Run, repo: Repo, feature: Feature | None) -> locks.Lock:
+        """Take the run's feature lock, or its repo's lock for a repo-scoped run."""
+        if feature is not None:
+            key, busy = locks.feature_lock_key(feature.id), f"Feature {feature.name}"
+        else:
+            key, busy = locks.repo_lock_key(repo.id), f"Repo {repo.name}"
+        try:
+            return locks.acquire(self.db, key, run_id=run.id)
+        except locks.LockHeld as exc:
+            raise RunError(f"{busy} already has an active run ({exc.info.run_id})") from exc
 
     async def execute_child(self, parent: RunContext, child_id: str) -> Run:
         run, files, state, definition = self._load(child_id)

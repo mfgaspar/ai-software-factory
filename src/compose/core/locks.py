@@ -26,6 +26,11 @@ def feature_lock_key(feature_id: str) -> str:
     return f"feature:{feature_id}"
 
 
+def repo_lock_key(repo_id: str) -> str:
+    """The lock of a repo's (single) active repo-scoped run, e.g. clarity."""
+    return f"clarity:{repo_id}"
+
+
 @dataclass(frozen=True)
 class LockInfo:
     key: str

@@ -79,6 +79,7 @@ class RunState:
     snapshots: dict[str, str] = field(default_factory=dict)  # exec id -> tree at step start
     workflow_dir: str | None = None
     workflow_source: str | None = None
+    workdir: str | None = None  # where the run works (a repo-scoped run has no feature)
     paused_at: str | None = None
     error: str | None = None
     updated_at: str = ""

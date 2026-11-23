@@ -22,11 +22,17 @@ def _root(db: Database, run: Run) -> Run:
 
 
 def recover_stale_runs(db: Database, home: Home) -> list[Run]:
-    """Fail every ``running`` run that no live process holds the feature lock for."""
+    """Fail every ``running`` run that no live process holds the run's lock for (its
+    feature's, or its repo's for a repo-scoped run)."""
     recovered: list[Run] = []
     for run in store.select(db, Run, "status = ?", (RunStatus.RUNNING.value,)):
         root = _root(db, run)
-        info = locks.read_lock(db, locks.feature_lock_key(run.feature_id or ""))
+        key = (
+            locks.feature_lock_key(run.feature_id)
+            if run.feature_id
+            else locks.repo_lock_key(run.repo_id)
+        )
+        info = locks.read_lock(db, key)
         alive = info is not None and info.run_id == root.id and not locks.is_stale(info)
         if alive:
             continue

@@ -57,6 +57,11 @@ class Env:
         return RunFiles(self.home.run_dir(run.id))
 
     def worktree(self, run: Run) -> Path:
+        """The run's feature worktree, or its working directory for a repo-scoped run."""
+        if run.feature_id is None:
+            workdir = self.files(run).read_state().workdir
+            assert workdir is not None, f"{run.id} has no working directory yet"
+            return Path(workdir)
         feature = self.db.conn.execute(
             "SELECT worktree_path FROM features WHERE id = ?", (run.feature_id,)
         ).fetchone()

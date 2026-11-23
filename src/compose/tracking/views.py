@@ -165,7 +165,7 @@ def run_detail(db: Database, home: Home, run_id: str) -> dict[str, Any]:
     feature = store.get(db, Feature, run.feature_id) if run.feature_id else None
     return {
         **run_brief(db, run),
-        "worktree": feature.worktree_path if feature else None,
+        "worktree": feature.worktree_path if feature else _workdir(home, run),
         "inputs": run.inputs,
         "outputs": run.outputs,
         "waiting": waiting_gate(home, run),
@@ -174,6 +174,12 @@ def run_detail(db: Database, home: Home, run_id: str) -> dict[str, Any]:
         "totals": aggregate.grand_total(db, run_id=run.id).to_json(),
         "run_dir": str(home.run_dir(run.id)),
     }
+
+
+def _workdir(home: Home, run: Run) -> str | None:
+    """Where a run with no feature (a repo-scoped run) works, from its state."""
+    files = RunFiles(home.run_dir(run.id))
+    return files.read_state().workdir if files.state.exists() else None
 
 
 def find_feature(db: Database, repo: Repo, name: str) -> Feature:

@@ -163,3 +163,45 @@ def worktree_add(repo: Path, path: Path, branch: str) -> None:
 
 def worktree_prune(repo: Path) -> None:
     git(repo, "worktree", "prune")
+
+
+def rev_parse(repo: Path, ref: str) -> str:
+    return git(repo, "rev-parse", "--verify", f"{ref}^{{commit}}")
+
+
+def is_ancestor(repo: Path, ancestor: str, descendant: str) -> bool:
+    proc = run_git(repo, "merge-base", "--is-ancestor", ancestor, descendant, check=False)
+    return proc.returncode == 0
+
+
+def conflicted_files(worktree: Path) -> list[str]:
+    out = git(worktree, "diff", "--name-only", "--diff-filter=U")
+    return [line for line in out.splitlines() if line]
+
+
+def merge(worktree: Path, ref: str, *, ff_only: bool = False) -> None:
+    """Merge ``ref`` into the branch checked out in ``worktree``."""
+    git(worktree, "merge", "--quiet", "--ff-only" if ff_only else "--no-edit", ref)
+
+
+def merge_abort(worktree: Path) -> None:
+    run_git(worktree, "merge", "--abort", check=False)
+
+
+def changed_paths(worktree: Path, *paths: str) -> list[str]:
+    """Uncommitted changes (staged, unstaged or untracked) under ``paths``."""
+    out = run_git(worktree, "status", "--porcelain", "--", *paths).stdout
+    return [line[3:] for line in out.splitlines() if line]
+
+
+def is_tracked(worktree: Path, path: str) -> bool:
+    return bool(git(worktree, "ls-files", "--", path))
+
+
+def is_ignored(worktree: Path, path: str) -> bool:
+    return run_git(worktree, "check-ignore", "-q", "--", path, check=False).returncode == 0
+
+
+def update_ref(repo: Path, branch: str, new: str, old: str) -> None:
+    """Move ``branch`` to ``new``, only if it still points at ``old``."""
+    git(repo, "update-ref", f"refs/heads/{branch}", new, old)
