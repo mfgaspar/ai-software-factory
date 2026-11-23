@@ -42,11 +42,21 @@ def claude(repo: Path, prompt: str) -> str:
     env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
     proc = subprocess.run(
         [
-            cli, "-p", prompt, "--output-format=json", f"--model={MODEL}",
-            f"--max-budget-usd={BUDGET_USD}", "--permission-mode=bypassPermissions",
+            cli,
+            "-p",
+            prompt,
+            "--output-format=json",
+            f"--model={MODEL}",
+            f"--max-budget-usd={BUDGET_USD}",
+            "--permission-mode=bypassPermissions",
             "--setting-sources=project",
         ],
-        cwd=repo, env=env, capture_output=True, text=True, timeout=1200, check=False,
+        cwd=repo,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=1200,
+        check=False,
     )
     assert proc.returncode == 0, proc.stderr[-2000:]
     result = json.loads(proc.stdout)
@@ -68,13 +78,15 @@ def filled_body(path: str, entry: dict[str, Any]) -> str:
     parts = [f"# {title}\n", "A word-count command-line tool for writers.\n"]
     for section in entry["required_sections"]:
         text = f"Written content for {section.lower()} of the word-count tool."
-        if path == "goal/requirements.md" and section == "Functional requirements":
-            text = "- **FR-001 — count words:** print the word count of a file."
+        if path == "goal/requirements.md" and section == "Non-functional requirements":
+            text = "- **NFR-001 — performance: fast:** count 10 MB in under a second."
         if path == "goal/open-questions.md":
             text = "No fundamental unknowns were identified; the problem is clear."
         if path == "decisions/index.md":
-            text = "| ADR | Title | Status | Date |\n|---|---|---|---|\n" \
-                   "| [ADR-001](ADR-001-language.md) | Use Python | accepted | 2026-11-22 |"
+            text = (
+                "| ADR | Title | Status | Date |\n|---|---|---|---|\n"
+                "| [ADR-001](ADR-001-language.md) | Use Python | accepted | 2026-11-22 |"
+            )
         parts.append(f"## {section}\n\n{text}\n")
     return "\n".join(parts)
 
@@ -104,13 +116,14 @@ def build_complete_project(git_repo: Path) -> Path:
     for path, entry in DOCUMENTS.items():
         front, _ = split((TEMPLATES / entry["template"]).read_text())
         write_doc(root, path, front, filled_body(path, entry))
-    (root / "contracts/openapi.yaml").write_text(
-        "openapi: 3.1.0\ninfo: {title: Word count, version: 1.0.0}\npaths: {}\n"
-    )
     adr_front, _ = split((TEMPLATES / "decisions/adr.md").read_text())
     adr_front.update(status="accepted", date="2026-11-22", depends_on=["goal/requirements.md"])
-    write_doc(root, "decisions/ADR-001-language.md", adr_front,
-              "# ADR-001: Use Python\n\n## Decision\n\nPython, for its standard library.\n")
+    write_doc(
+        root,
+        "decisions/ADR-001-language.md",
+        adr_front,
+        "# ADR-001: Use Python\n\n## Decision\n\nPython, for its standard library.\n",
+    )
     # confirm in walk order so every recorded dependency hash is current
     for path in MANIFEST["walk_order"]:
         confirm(root, path)
@@ -154,7 +167,7 @@ def test_stale_is_a_warning_unless_configured(project: Path) -> None:
 def test_na_and_approvals(project: Path) -> None:
     root = project / ".clarity"
     (root / "config.yml").write_text(
-        "not_applicable:\n  product/ux-flows.md: \"Command-line tool, no screens\"\n"
+        'not_applicable:\n  product/ux-standards.md: "Command-line tool, no screens"\n'
         "approvals:\n  product/prd.md: [Ana Silva]\n"
     )
     text = claude(project, "/clarity-validate")
@@ -191,6 +204,7 @@ def test_orchestrator_auto_drafts_from_sources(git_repo: Path) -> None:
         front, _ = split((root / path).read_text())
         assert front["status"] == "draft", path  # auto never confirms
         assert any("prd.md" in str(s) for s in front["sources"]), path
+    assert not re.search(r"\bFR-0", (root / "goal/requirements.md").read_text())  # compose's
     api_front, _ = split((root / "contracts/api.md").read_text())
     assert "openapi.yaml" in str(api_front["spec"])
     for path in DOCUMENTS:

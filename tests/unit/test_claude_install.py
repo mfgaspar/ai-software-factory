@@ -26,8 +26,8 @@ def assets(tmp_path: Path) -> Path:
     (root / "skills" / "compose-plan" / "reference.md").write_text("ref\n")
     (root / "skills" / "other-skill").mkdir()
     (root / "skills" / "other-skill" / "SKILL.md").write_text("not ours\n")
-    (root / "templates").mkdir()
-    (root / "templates" / "spec.md").write_text("# Spec template\n")
+    (root / "templates" / "compose").mkdir(parents=True)
+    (root / "templates" / "compose" / "spec.md").write_text("# Spec template\n")
     return root
 
 
@@ -85,15 +85,15 @@ def test_install_into_a_repo(git_repo: Path, assets: Path) -> None:
         ".claude/skills/compose-plan/SKILL.md",
         ".claude/skills/compose-plan/reference.md",
         ".claude/skills/compose-specify/SKILL.md",
-        ".compose/templates/spec.md",
+        ".compose/templates/compose/spec.md",
     ]
     assert installer.install(git_repo, assets=assets) == []  # nothing changed
 
-    (git_repo / ".compose/templates/spec.md").write_text("# My own template\n")
+    (git_repo / ".compose/templates/compose/spec.md").write_text("# My own template\n")
     (assets / "skills/compose-plan/SKILL.md").write_text("compose-plan v2\n")
     again = installer.install(git_repo, assets=assets)
     assert rel(again, git_repo) == [".claude/skills/compose-plan/SKILL.md"]
-    assert (git_repo / ".compose/templates/spec.md").read_text() == "# My own template\n"
+    assert (git_repo / ".compose/templates/compose/spec.md").read_text() == "# My own template\n"
     exclude = git_repo / ".git" / "info" / "exclude"
     assert installer.EXCLUDE_BEGIN not in (exclude.read_text() if exclude.exists() else "")
 
@@ -113,7 +113,7 @@ def test_install_into_a_run_worktree(git_repo: Path, assets: Path, tmp_path: Pat
     assert rel(written, worktree) == [
         ".claude/skills/compose-plan/SKILL.md",
         ".claude/skills/compose-plan/reference.md",
-        ".compose/templates/spec.md",
+        ".compose/templates/compose/spec.md",
     ]
     assert (worktree / ".claude/skills/compose-specify/SKILL.md").read_text() == "team version\n"
     assert git(worktree, "status", "--porcelain") == ""  # installed files are hidden
@@ -125,7 +125,7 @@ def test_install_into_a_run_worktree(git_repo: Path, assets: Path, tmp_path: Pat
     text = exclude.read_text()
     assert text.count(installer.EXCLUDE_BEGIN) == 1
     assert "/.claude/skills/compose-plan/" in text
-    assert "/.compose/templates/spec.md" in text
+    assert "/.compose/templates/compose/spec.md" in text
     assert "compose-specify" not in text
 
 

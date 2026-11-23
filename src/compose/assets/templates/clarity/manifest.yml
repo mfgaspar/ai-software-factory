@@ -1,5 +1,9 @@
 # Clarity manifest: the single source of truth for the clarity-* skills.
 #
+# Clarity holds the application-level why, rules and how. It never holds functional
+# requirements, feature lists, screens or feature endpoints: those are "what", defined per
+# feature by compose (compose-specify, then compose-plan), which follows these documents.
+#
 # Shipped with compose and refreshed on every install. Do not edit it in a project:
 # customise through .clarity/config.yml, which is applied on top (the "effective manifest").
 # Paths under `documents` are relative to .clarity/; templates are relative to this folder.
@@ -40,7 +44,7 @@ walk_order:
   - solution/architecture.md
   - decisions/index.md
   - product/prd.md
-  - product/ux-flows.md
+  - product/ux-standards.md
   - contracts/api.md
   - data/data-model.md
   - ops/setup-guide.md
@@ -58,7 +62,7 @@ stages:
   - name: architecture
     documents: [solution/architecture.md, decisions/index.md]
   - name: product
-    documents: [product/prd.md, product/ux-flows.md]
+    documents: [product/prd.md, product/ux-standards.md]
   - name: technical
     documents: [contracts/api.md, data/data-model.md, ops/setup-guide.md]
   - name: summaries
@@ -91,7 +95,7 @@ documents:
     template: goal/requirements.md
     mandatory: true
     allow_na: false
-    required_sections: [Functional requirements, Non-functional requirements, Constraints]
+    required_sections: [Non-functional requirements, Constraints, Standards]
     depends_on: [goal/problem.md, goal/stakeholders.md]
     produced_by: clarity-problem
 
@@ -144,25 +148,24 @@ documents:
     template: product/prd.md
     mandatory: true
     allow_na: true
-    required_sections: [Overview, Users and personas, Goals and metrics, Scope, Features, Release criteria]
+    required_sections: [Overview, Users and personas, Goals and metrics, Scope boundaries, Product principles]
     depends_on: [goal/problem.md, goal/stakeholders.md, goal/requirements.md, solution/solution.md]
     produced_by: clarity-prd
 
-  product/ux-flows.md:
-    template: product/ux-flows.md
+  product/ux-standards.md:
+    template: product/ux-standards.md
     mandatory: true
     allow_na: true
-    required_sections: [Screens, User journeys, State flows]
+    required_sections: [Surfaces and navigation, Interaction patterns, Accessibility and localization, Design system, State conventions]
     depends_on: [product/prd.md, goal/requirements.md]
-    produced_by: clarity-ux-flows
+    produced_by: clarity-ux-standards
 
   contracts/api.md:
     template: contracts/api.md
-    kind: contract           # front matter `spec:` must name an existing, well-formed spec file
-    spec_template: contracts/openapi.yaml
+    kind: contract           # optional front matter `spec:`; when set, an existing, well-formed spec file
     mandatory: true
     allow_na: true
-    required_sections: [Overview, Authentication, Operations, Errors, Versioning]
+    required_sections: [Overview, Authentication, Conventions, Errors, Versioning]
     depends_on: [solution/architecture.md, goal/requirements.md]
     produced_by: clarity-api-contracts
 
@@ -170,7 +173,7 @@ documents:
     template: data/data-model.md
     mandatory: true
     allow_na: true
-    required_sections: [Entities, Schema, Entity relationship diagram, Migrations, Retention]
+    required_sections: [Core entities, Entity relationship diagram, Data rules, Migrations, Retention]
     depends_on: [solution/architecture.md, goal/requirements.md]
     produced_by: clarity-data-model
 
@@ -209,4 +212,3 @@ helpers:
   adr: decisions/adr.md
   failure_mode: failures/failure-mode.md
   thinker_output: failures/brainstorm/thinker.md
-  openapi: contracts/openapi.yaml

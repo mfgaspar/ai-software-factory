@@ -13,7 +13,10 @@ sources: []
 approvals: []
 ---
 
-# Product Requirements Document
+# Product brief
+
+Why the product exists and the boundaries every feature stays within. It lists no features:
+each feature is specified on its own (`compose-specify`) and must serve the goals below.
 
 ## Overview
 
@@ -25,20 +28,18 @@ approvals: []
 
 ## Goals and metrics
 
-[TBD — product goals and how each is measured (ties to the success criteria).]
+[TBD — product goals and how each is measured (ties to the success criteria). Give each an
+ID that feature specifications cite:]
 
-## Scope
+- **G-001 — [goal]:** [TBD] — *Metric:* [TBD]
 
-**In this release:** [TBD]
+## Scope boundaries
 
-**Not in this release:** [TBD]
+**In scope for the product:** [TBD — the areas features may cover]
 
-## Features
+**Out of scope:** [TBD — what no feature should do]
 
-[TBD — one entry per feature, citing the requirements it delivers:]
+## Product principles
 
-- **[Feature]** — [what the user can do]. Delivers: FR-001, NFR-002.
-
-## Release criteria
-
-[TBD — what must be true to ship.]
+[TBD — the product rules every feature follows, for example "never lose a user's draft" or
+"works offline first", each one checkable in a review.]

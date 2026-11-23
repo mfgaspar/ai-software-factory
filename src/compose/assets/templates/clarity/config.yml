@@ -8,7 +8,7 @@
 # goal/problem.md and goal/requirements.md can never be removed.
 # mandatory:
 #   add: [ops/runbook.md]
-#   remove: [product/ux-flows.md]
+#   remove: [product/ux-standards.md]
 
 # Documents that don't apply to this project, decided up front, each with its reason.
 # not_applicable:

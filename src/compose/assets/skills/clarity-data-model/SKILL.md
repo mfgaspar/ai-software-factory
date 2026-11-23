@@ -1,10 +1,10 @@
 ---
 name: clarity-data-model
-description: Write or revise the data model (.clarity/data/data-model.md) - entities citing the requirements that need them, a schema table per entity, a Mermaid erDiagram, migrations and retention - seeded from SQL, ORM models or migrations when present. Use when the project stores data, or when /clarity reaches the technical stage.
+description: Write or revise the domain model and data rules (.clarity/data/data-model.md) - the core entities the whole application shares, a Mermaid erDiagram of them, data rules, migrations and retention - seeded from SQL, ORM models or migrations when present. Feature tables are not listed here; each feature's plan adds them. Use when the project stores data, or when /clarity reaches the technical stage.
 argument-hint: "[focus, schema files or extra sources]"
 ---
 
-# Data model
+# Domain model and data rules
 
 Focus, schema files or extra sources from the user:
 
@@ -12,9 +12,10 @@ Focus, schema files or extra sources from the user:
 $ARGUMENTS
 ```
 
-The data model says what the system remembers, how the pieces relate, how the structure
-changes over time and when data is deleted. Each entity exists because a requirement needs
-it; nothing is stored just in case.
+This document names the few core entities most features touch, how they relate, and the
+rules all data follows: storage, naming, identifiers, personal data, migrations and
+retention. It lists no feature tables or fields: each feature's plan (`compose-plan`) adds
+those, following these rules.
 
 ## Steps
 
@@ -23,33 +24,37 @@ it; nothing is stored just in case.
      `template`, `required_sections` and `depends_on`.
    - `.clarity/notes.md`: act on items tagged `[for: clarity-data-model]`, then remove them.
    - The `depends_on` documents: `.clarity/solution/architecture.md` (data stores, which
-     component owns what) and `.clarity/goal/requirements.md` (FR IDs; privacy, retention,
-     compliance and performance NFRs). Also `.clarity/contracts/api.md` and its spec, and
-     `.clarity/product/ux-flows.md`, when they exist: their payloads and state diagrams name
-     entities and statuses.
+     component owns what) and `.clarity/goal/requirements.md` (privacy, retention,
+     compliance and performance NFRs, constraints, standards). Also
+     `.clarity/contracts/api.md` and `.clarity/product/ux-standards.md` when they exist: their
+     ID, timestamp and state conventions must agree with the data rules.
    - The document's front matter `sources` and anything in the arguments.
    - **The repo.** SQL schema and DDL files, migration folders, ORM models and entity
-     classes, document-store schemas, seed data. These seed the draft: reuse table, column
-     and type names exactly as the code has them.
+     classes, document-store schemas. These seed the core entities (reuse names exactly as
+     the code has them) and show the data rules in use: ID types, timestamp columns, soft
+     delete flags, audit fields, naming style.
 2. **Create the file if needed.** If `.clarity/data/data-model.md` doesn't exist, copy
    `.compose/templates/clarity/data/data-model.md` there, then fill its sections. Keep
    `status: draft` and save a rough draft early.
 3. **Draft each section.**
-   - **Entities**: each entity, what it represents in the domain, which component owns it,
-     and the FR/NFR IDs that need it. Mark personal or sensitive data.
-   - **Schema**: one table per entity listing columns (or fields), types, constraints (keys,
-     uniqueness, nullability, defaults, checks) and notes. Name the indexes that matter for
-     the access patterns in the requirements.
-   - **Entity relationship diagram**: a Mermaid `erDiagram` with every entity and its
-     relationships and cardinalities. It must match the schema tables.
+   - **Core entities**: only the entities most features share (a user, an account, an
+     organisation, an order). For each, what it represents, which component owns it, and
+     whether it holds personal or sensitive data. Keep fields out; feature plans add them.
+   - **Entity relationship diagram**: a Mermaid `erDiagram` of the core entities with their
+     relationships and cardinalities.
+   - **Data rules**: storage choice per kind of data, naming, identifiers, timestamps and
+     time zones, soft or hard delete, personal data handling, auditing. Write each as a rule
+     a feature plan can follow.
    - **Migrations**: the tool and where migrations live, how they run in each environment,
-     how to roll back, and how to change a column without downtime when that matters.
-   - **Retention**: per entity or data class, how long it is kept, why, and how it is
-     deleted or anonymised. Tie each rule to the compliance and privacy NFRs; where none
-     exist, say so and ask.
-4. **Check consistency** and show the user: requirements that imply stored data with no
-   entity, entities that no requirement needs, mismatches with the code or the API payloads,
-   statuses that differ from the state diagrams, and sensitive data with no retention rule.
+     how to roll back, and the rules a migration must follow (for example, no downtime
+     column changes).
+   - **Retention**: per data class, how long it is kept, why, and how it is deleted or
+     anonymised. Tie each rule to the compliance and privacy NFRs; where none exist, say so
+     and ask.
+4. **Check consistency** and show the user: privacy, retention or compliance NFRs no rule
+   covers, places where the code breaks the rules, conflicts with the API or UX state
+   conventions, and sensitive data with no retention rule. Feature tables found in the code
+   are not listed here.
 5. **Ask only about the gaps** that remain. Never re-ask what the documents, sources or code
    already answer.
 6. **Finish** (see below).
@@ -59,9 +64,9 @@ it; nothing is stored just in case.
 Propose N/A when the system is stateless with no persistence of its own: no database, no
 files it keeps, no durable queues or caches whose loss would matter. State the evidence (for
 example, "a pure transformation service; no data store in the architecture, no models or
-migrations in the code"). Data held only by a third-party service may still need entities
-and retention here; ask. Only on the user's agreement set `status: n/a` and a `reason:`.
-Never decide N/A alone.
+migrations in the code"). Data held only by a third-party service may still need rules and
+retention here; ask. Only on the user's agreement set `status: n/a` and a `reason:`. Never
+decide N/A alone.
 
 ## Unattended (`auto`)
 
@@ -72,10 +77,10 @@ conflicting>]` note, and propose any N/A only as a note. Never set `status: comp
 
 ## Finish
 
-- Remove every placeholder (`[TBD…]`, `[To be determined…]`, the bracketed prompts, the
-  template's example table row and example diagram) from the sections you filled.
-- Notable choices (the type of store, denormalising for speed, soft versus hard deletes)
-  deserve an ADR: record one with the `clarity-decision` skill, or tell the user.
+- Remove every placeholder (`[TBD…]`, `[To be determined…]`, the bracketed prompts and the
+  template's example diagram) from the sections you filled.
+- Notable choices (the type of store, soft versus hard deletes, the ID scheme) deserve an
+  ADR: record one with the `clarity-decision` skill, or tell the user.
 - If you changed another document that is already `complete` (for example, the architecture
   for a new store), leave its `status` and `reviewed` alone and tell the user which documents
   you touched.
@@ -89,6 +94,7 @@ conflicting>]` note, and propose any N/A only as a note. Never set `status: comp
 
 ## Rules
 
+- Core entities and rules, not schemas. Feature tables come from each feature's plan.
 - Never copy real records from seed files or dumps into the document; describe their shape.
 - The code and migrations are the truth for what exists; the document may describe planned
   changes, labelled as such.

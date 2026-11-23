@@ -65,7 +65,7 @@ def init_repo(
     constitution = root / CONSTITUTION
     if not constitution.exists():
         constitution.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(ASSETS / "templates" / "constitution.md", constitution)
+        shutil.copyfile(ASSETS / "templates" / "compose" / "constitution.md", constitution)
         report.written.append(constitution)
     gitignore = _ensure_gitignore(root)
     if gitignore is not None:

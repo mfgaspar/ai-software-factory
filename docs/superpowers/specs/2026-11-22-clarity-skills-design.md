@@ -530,3 +530,26 @@ skill, or the approver who still has to sign.
 - Whether the mapping test from template to SKILL.md uses heading blocks or another overlap
   heuristic.
 - The manifest's exact YAML shape, within the fields listed above.
+
+## Amendment 2026-11-23 — clarity is why, rules and how; compose is what
+
+Decided with the user after the first build:
+
+- **Split.** Clarity holds the application-level why (problem, users, goals), rules (NFR,
+  constraints, standards, product principles, UX standards, API conventions, data rules) and
+  how (solution, architecture, stack, ADRs, environments). compose holds each feature's what
+  (`compose-specify`: user stories, `FR-###`) and that feature's how (`compose-plan`,
+  `compose-tasks`), inside clarity's rules.
+- **Reframed documents.** `goal/requirements.md` keeps only NFR, CON and STD items. `product/prd.md`
+  becomes a product brief (goals `G-###`, scope boundaries, principles, with no features).
+  `product/ux-flows.md` becomes `product/ux-standards.md` (skill `clarity-ux-standards`).
+  `contracts/api.md` becomes API conventions, with `spec:` optional and only for an existing
+  published contract; the `openapi.yaml` stub is removed. `data/data-model.md` becomes core
+  entities and data rules. Feature-level content found in sources goes to
+  `## Feature ideas` in `notes.md`.
+- **compose follows clarity.** `compose feature paths --json` adds `clarity`, the declared
+  status of each document, read from front matter. A shared guide,
+  `templates/compose/clarity.md`, says what constitution, specify, clarify, plan, tasks and
+  analyze take from which document. Complete documents are binding, drafts are hints, n/a
+  documents are skipped, and only accepted ADRs bind. compose never edits `.clarity/`.
+- **compose templates** moved to `templates/compose/`, next to `templates/clarity/`.

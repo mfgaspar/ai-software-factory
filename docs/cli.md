@@ -27,7 +27,7 @@ branch plus `specs/NNN-name/` in your current checkout.
 | command | what it does |
 |---|---|
 | `compose feature new <description> [--name short] [--no-switch]` | create the next numbered branch and specs folder (inside a run: returns the run's feature) |
-| `compose feature paths` | paths of the current feature (from `COMPOSE_FEATURE` or the branch) |
+| `compose feature paths` | paths of the current feature (from `COMPOSE_FEATURE` or the branch), plus a `clarity` entry listing each `.clarity/` document's status (`null` without one) |
 | `compose feature list` | features found in branches and specs folders |
 | `compose feature show <feature>` | a feature's paths and which spec files exist |
 

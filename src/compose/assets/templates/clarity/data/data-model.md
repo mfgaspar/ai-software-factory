@@ -11,19 +11,16 @@ sources: []
 approvals: []
 ---
 
-# Database Schema and ERD
+# Domain model and data rules
 
-## Entities
+The core entities the whole application shares, and the rules all data follows. Feature
+specific tables and fields are not listed here: each feature's plan adds them
+(`compose-plan`) following these rules.
 
-[To be determined. Each entity, what it represents, and the requirements that need it.]
+## Core entities
 
-## Schema
-
-[TBD — one table per entity:]
-
-| Table | Column | Type | Constraints | Notes |
-|-------|--------|------|-------------|-------|
-| [TBD] | | | | |
+[To be determined. The few entities most features touch, what each represents, and which
+component owns it.]
 
 ## Entity relationship diagram
 
@@ -32,9 +29,14 @@ erDiagram
   TBD ||--o{ TBD_CHILD : has
 ```
 
+## Data rules
+
+[TBD — storage choices per kind of data, naming, identifiers, timestamps and time zones,
+soft or hard delete, personal data handling, auditing.]
+
 ## Migrations
 
-[TBD — how the schema is created and evolved.]
+[TBD — how the schema is created and evolved, and the rules a migration must follow.]
 
 ## Retention
 

@@ -49,7 +49,7 @@ CLARITY_SKILLS = [
     "clarity-problem",
     "clarity-setup-guide",
     "clarity-solution",
-    "clarity-ux-flows",
+    "clarity-ux-standards",
     "clarity-validate",
 ]
 CLARITY_PENDING: set[str] = set()
@@ -143,12 +143,19 @@ def test_no_references_to_the_old_project() -> None:
 
 
 def test_templates() -> None:
-    names = sorted(p.name for p in (ASSETS / "templates").iterdir() if p.is_file())
-    assert names == ["checklist.md", "constitution.md", "plan.md", "spec.md", "tasks.md"]
-    spec = (ASSETS / "templates" / "spec.md").read_text()
+    names = sorted(p.name for p in (ASSETS / "templates" / "compose").iterdir() if p.is_file())
+    assert names == [
+        "checklist.md",
+        "clarity.md",
+        "constitution.md",
+        "plan.md",
+        "spec.md",
+        "tasks.md",
+    ]
+    spec = (ASSETS / "templates" / "compose" / "spec.md").read_text()
     for heading in ("## User scenarios", "## Requirements", "## Success criteria"):
         assert heading in spec
-    tasks = (ASSETS / "templates" / "tasks.md").read_text()
+    tasks = (ASSETS / "templates" / "compose" / "tasks.md").read_text()
     assert "- [ ] T001" in tasks
 
 

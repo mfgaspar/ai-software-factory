@@ -104,9 +104,7 @@ def test_document_template(path: str) -> None:
 
 def test_contract_and_adr_templates() -> None:
     front, _ = split((TEMPLATES / "contracts/api.md").read_text())
-    assert front["spec"] == "contracts/openapi.yaml"
-    spec = yaml.safe_load((TEMPLATES / "contracts/openapi.yaml").read_text())
-    assert spec["openapi"].startswith("3.")
+    assert front["spec"] == ""  # optional: only an existing published contract
     adr, body = split((TEMPLATES / "decisions/adr.md").read_text())
     assert adr["status"] == "proposed"
     assert "## Decision" in body
@@ -197,11 +195,28 @@ def test_validate_skill_covers_every_rule() -> None:
     body = skill_body("clarity-validate")
     assert "hash_command" in body and ".clarity/config.yml" in body
     assert "CLARITY: PASS" in body and "CLARITY: FAIL (<n> incomplete)" in body
-    for state in ("missing", "invalid-n/a", "draft", "edited", "blocked", "unapproved",
-                  "complete", "stale", "outdated"):
+    for state in (
+        "missing",
+        "invalid-n/a",
+        "draft",
+        "edited",
+        "blocked",
+        "unapproved",
+        "complete",
+        "stale",
+        "outdated",
+    ):
         assert f"**{state}**" in body, state
-    for key in ("placeholder_markers", "required_sections", "never_na", "stale_fails",
-                "not_applicable", "approvals", "**Blocking:** yes", "reconsider"):
+    for key in (
+        "placeholder_markers",
+        "required_sections",
+        "never_na",
+        "stale_fails",
+        "not_applicable",
+        "approvals",
+        "**Blocking:** yes",
+        "reconsider",
+    ):
         assert key in body, key
     assert "never writes" in body
 
@@ -254,9 +269,15 @@ def test_skill_writes_only_known_documents(skill: str) -> None:
     documented family of files (ADRs, failure modes, brainstorm output, prototypes)."""
     body = skill_body(skill)
     known = set(DOCUMENTS) | set(MANIFEST["companions"]) | {"messaging.md"}
-    families = ("decisions/ADR-", "failures/failure-", "failures/brainstorm/", "prototypes/",
-                "goal/discovery/",
-                "templates/", "contracts/")
+    families = (
+        "decisions/ADR-",
+        "failures/failure-",
+        "failures/brainstorm/",
+        "prototypes/",
+        "goal/discovery/",
+        "templates/",
+        "contracts/",
+    )
     for path in re.findall(r"\.clarity/([\w./<>-]+\.md)", body):
         assert path in known or path.startswith(families), f"{skill}: .clarity/{path}"
 
@@ -269,14 +290,28 @@ def test_produced_by_skills_are_all_shipped() -> None:
 
 def test_orchestrator_runs_the_whole_flow() -> None:
     body = skill_body("clarity")
-    for step in ("### 0. Assess", "### 1. Inputs", "### 2. Configure", "### 3. Scaffold",
-                 "### 4. Infer", "### 5. Stages", "### 6. Recheck", "### 7. Approve",
-                 "### 8. Validate"):
+    for step in (
+        "### 0. Assess",
+        "### 1. Inputs",
+        "### 2. Configure",
+        "### 3. Scaffold",
+        "### 4. Infer",
+        "### 5. Stages",
+        "### 6. Recheck",
+        "### 7. Approve",
+        "### 8. Validate",
+    ):
         assert step in body, step
     # the skills it calls by name; producing skills are reached through `produced_by`
-    for skill in ("clarity-configure", "clarity-validate", "clarity-approve", "clarity-decision",
-                  "clarity-failure-brainstorm", "clarity-failure-analysis",
-                  "clarity-failure-management"):
+    for skill in (
+        "clarity-configure",
+        "clarity-validate",
+        "clarity-approve",
+        "clarity-decision",
+        "clarity-failure-brainstorm",
+        "clarity-failure-analysis",
+        "clarity-failure-management",
+    ):
         assert f"`{skill}`" in body, skill
     assert "question_strategies" in body and "produced_by" in body
     assert "`auto` **never**" in body
@@ -301,8 +336,8 @@ def test_thinkers_ship_with_their_prerequisites() -> None:
 def test_software_document_skills() -> None:
     assert "spec:" in skill_body("clarity-api-contracts")
     assert "erDiagram" in skill_body("clarity-data-model")
-    assert "stateDiagram" in skill_body("clarity-ux-flows")
-    assert "FR-" in skill_body("clarity-prd")
+    assert "stateDiagram" in skill_body("clarity-ux-standards")
+    assert "G-" in skill_body("clarity-prd")
     setup = skill_body("clarity-setup-guide")
     assert "secret" in setup.lower() and "never" in setup.lower()
 
@@ -310,3 +345,37 @@ def test_software_document_skills() -> None:
 def test_no_clarity_skill_mentions_the_original_folder() -> None:
     for skill in SHIPPED_CLARITY:
         assert ".clarity-protocol" not in (SKILLS / skill / "SKILL.md").read_text(), skill
+
+
+def test_clarity_holds_no_feature_level_what() -> None:
+    """Functional requirements and features are compose's; clarity holds why, rules, how."""
+    for path in TEMPLATES.rglob("*.md"):
+        text = path.read_text()
+        assert not re.search(r"\bFR-0", text), path
+        assert "## Features" not in text and "## Screens" not in text, path
+    requirements = (TEMPLATES / "goal/requirements.md").read_text()
+    for prefix in ("NFR-001", "CON-001", "STD-001"):
+        assert prefix in requirements
+
+
+COMPOSE_STEPS = (
+    "compose-constitution",
+    "compose-specify",
+    "compose-clarify",
+    "compose-plan",
+    "compose-tasks",
+    "compose-analyze",
+)
+
+
+def test_compose_steps_follow_clarity() -> None:
+    guide = ASSETS / "templates" / "compose" / "clarity.md"
+    text = guide.read_text()
+    for step in ("constitution", "specify", "plan", "tasks", "analyze"):
+        assert f"| {step} |" in text
+    for name in COMPOSE_STEPS:
+        body = (ASSETS / "skills" / name / "SKILL.md").read_text()
+        assert "clarity" in body.lower(), name
+        assert "clarity.md" in body or "clarity.guide" in body, name
+    assert "**Serves**" in (ASSETS / "templates" / "compose" / "spec.md").read_text()
+    assert "### Clarity check" in (ASSETS / "templates" / "compose" / "plan.md").read_text()

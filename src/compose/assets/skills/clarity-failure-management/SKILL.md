@@ -116,7 +116,8 @@ care only about meaningful harm to non-adversarial stakeholders.
    component, a changed flow, a new control), edit `.clarity/solution/solution.md` or
    `.clarity/solution/architecture.md` to match. New stakeholders, goals or requirements
    found along the way go straight into `.clarity/goal/stakeholders.md` or
-   `.clarity/goal/requirements.md` (with new FR-### or NFR-### IDs). Cite the failure
+   `.clarity/goal/requirements.md` (as new NFR-### or STD-### IDs, never functional
+   requirements). Cite the failure
    document in what you add. If an edited document is already `complete`, leave its
    `status` and `reviewed` alone so `/clarity` re-confirms it, and tell the user which
    documents you touched and why.

@@ -61,8 +61,8 @@ Fill every section of the template and remove every placeholder (`[TBD…]`,
 
 - **Context**: the boundary, the people and external systems around it, the main interactions.
 - **Components**: open with the core nouns and verbs. Then each component's responsibility and
-  the technology chosen, linking the ADR for each notable choice. Cite the requirements
-  (FR-###, NFR-###) a component exists to meet.
+  the technology chosen, linking the ADR for each notable choice. Cite the goals (`G-###`,
+  success criteria) and rules (NFR-###, CON-###, STD-###) a component exists to meet.
 - **Data flows**: how data moves between components, its sensitivity, and where it crosses a
   trust boundary.
 - **Deployment**: environments, hosting, topology, scaling, and how it is released and rolled

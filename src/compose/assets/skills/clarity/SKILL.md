@@ -1,6 +1,6 @@
 ---
 name: clarity
-description: Think a project through end to end and write its clarity documents in .clarity/ — problem, requirements, solution, failures, architecture, ADRs, PRD, UX, API, data model, setup guide — inferring from any documents supplied, then approvals and a final PASS/FAIL check. The one entry point; resumes where it left off.
+description: Think a project through end to end and write its application-level clarity documents in .clarity/ — problem, NFRs, constraints and standards, solution, failures, architecture, ADRs, product brief, UX standards, API conventions, data rules, setup guide — inferring from any documents supplied, then approvals and a final PASS/FAIL check. The one entry point; resumes where it left off.
 argument-hint: "[documents, folders or URLs to learn from] [auto] [mandatory: …]"
 ---
 
@@ -22,6 +22,12 @@ with curiosity, not checklists. The user experiences a conversation. The files a
 kept quietly up to date. Don't talk about manifests, hashes or stages ("we haven't talked about
 who this is for yet", not "stakeholders.md is draft"). When you're invoked from inside a larger
 task (a coding session that already knows the project), don't re-ask what is already known.
+
+Clarity covers the application level: the why (problem, users, goals, success), the rules
+and standards every feature follows, and the application-level how (solution, architecture,
+decisions, setup). It writes no functional requirements, feature lists, screens, feature
+endpoints or feature tables: features are specified with compose (`compose-specify`, then
+`compose-plan`), following these documents.
 
 **This skill runs the whole process.** The user never has to call the other clarity skills.
 You call them in order, and after each one you look at the files again and continue. The other
@@ -117,8 +123,13 @@ conflicting (for example `[TBD — PRD says 3 user roles, code has 2; which is r
 Reuse machine-readable sources instead of retyping them:
 
 - An existing OpenAPI or GraphQL file becomes the `spec:` of `contracts/api.md`. Use its
-  repo-relative path, or copy it into `.clarity/contracts/` when it's outside the repo.
-- SQL, ORM models or migrations seed `data/data-model.md`.
+  repo-relative path, or copy it into `.clarity/contracts/` when it's outside the repo. Infer
+  the API conventions (auth, naming, pagination, errors, versioning) from it.
+- SQL, ORM models or migrations seed the core entities and data rules of
+  `data/data-model.md`.
+- Feature-level content (feature lists, screens and journeys, endpoint lists, functional
+  requirements) is not copied into clarity. Summarize it, one line per item, under
+  `## Feature ideas` in `.clarity/notes.md`, for `compose-specify` later.
 
 A document that the sources show doesn't apply is not marked N/A here. Note it as a candidate
 for the user to confirm in its stage.
@@ -197,7 +208,8 @@ name. Approvers who aren't present stay pending, and the report names them. Skip
 Invoke `clarity-validate`, and show its table and its last line (`CLARITY: PASS` or
 `CLARITY: FAIL (<n> incomplete)`). After it, add one plain sentence: what's done, and who needs
 to do what next, for example "Ana needs to approve the PRD: she can run `/clarity-approve
-product/prd.md`".
+product/prd.md`". When the project uses compose, also suggest `/compose-constitution` to
+derive or refresh the constitution from these documents.
 
 ## Resuming, re-runs and loops
 

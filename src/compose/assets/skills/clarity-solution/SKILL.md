@@ -60,7 +60,8 @@ Fill the template sections and remove every placeholder (`[TBD…]`, `[To be det
 other bracketed prompts) from what you fill:
 
 - `solution/solution.md`: the approach a stakeholder can follow and the key design choices in
-  it; why it fits, citing the requirement IDs (FR-###, NFR-###) it satisfies and saying how;
+  it; why it fits, citing the goals (`G-###` and the problem's success criteria) it serves and
+  the rules (NFR-###, CON-###, STD-###) it meets, and saying how;
   the alternatives and why they lost; risks, assumptions and observations worth tracking.
 - `solution/solution-summary.md` (first version, `status: draft`): at most two pages for
   someone who read the problem and asks "so what's the plan?". What we're building; what using

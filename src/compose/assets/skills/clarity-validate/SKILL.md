@@ -78,10 +78,11 @@ Kind-specific completeness, checked as part of step 3 (draft):
 
 - `kind: decisions`: complete also needs at least one `ADR-*.md` file listed in the index
   table.
-- `kind: contract`: the front matter `spec` names a file that exists (relative to `.clarity/`
-  or the repo root) and is well-formed. For OpenAPI that means valid YAML or JSON with an
-  `openapi` key; for GraphQL, a schema with at least one type. A bad or missing spec counts as
-  draft, with that reason.
+- `kind: contract`: `spec` is optional; an empty or missing `spec` is fine. When the front
+  matter `spec` is non-empty, it must name a file that exists (relative to `.clarity/` or the
+  repo root) and is well-formed. For OpenAPI that means valid YAML or JSON with an `openapi`
+  key; for GraphQL, a schema with at least one type. A named spec that is missing or bad
+  counts as draft, with that reason.
 
 Then, as a **separate** check for complete and edited documents, find the **stale** ones. A
 document is stale when a document in `depends_on` has a current body hash that differs from the

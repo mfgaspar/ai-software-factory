@@ -1,10 +1,16 @@
 # Clarity skills
 
-The clarity skills help a team work out **what** to build, and **why**, before building it.
-They produce a reviewed set of documents in `.clarity/`: the problem, stakeholders,
-requirements, open questions, solution, failure analysis, architecture, ADRs, PRD, UI/UX flows,
-API contracts, data model, setup guide and summaries. Then they check that every mandatory
+The clarity skills settle an application's **why**, its **rules** and its **how** before
+features are built. They produce a reviewed set of documents in `.clarity/`: the problem,
+stakeholders, non-functional requirements, constraints and standards, open questions,
+solution, failure analysis, architecture, ADRs, product brief, UX standards, API conventions,
+domain model and data rules, setup guide and summaries. Then they check that every mandatory
 document is complete.
+
+Clarity never holds the **what** of a feature: functional requirements, feature lists,
+screens, endpoints or feature tables. compose defines those one feature at a time
+(`/compose-specify`, then `/compose-plan`), inside clarity's rules. See
+[How compose uses clarity](#how-compose-uses-clarity).
 
 They're adapted from [microsoft/clarity-agent](https://github.com/microsoft/clarity-agent)
 (MIT), which does the same with Python code. Here the same work runs through Claude Code
@@ -55,16 +61,16 @@ what needs a person.
 |---|---|---|
 | `goal/problem.md` | clarity-problem | Can't be N/A or removed |
 | `goal/stakeholders.md` | clarity-problem | |
-| `goal/requirements.md` | clarity-problem | `FR-###` / `NFR-###` IDs. Can't be N/A or removed |
+| `goal/requirements.md` | clarity-problem | Non-functional requirements `NFR-###`, constraints `CON-###`, standards `STD-###`. No functional requirements. Can't be N/A or removed |
 | `goal/open-questions.md` | clarity-problem | Each question has Status, Strategy, **Blocking** |
 | `solution/solution.md` | clarity-solution | |
 | `failures/failures.md` | clarity-failure-brainstorm → -analysis → -management | Six "thinkers" brainstorm in parallel |
 | `solution/architecture.md` | clarity-architecture | System architecture document, with a mermaid threat model |
 | `decisions/index.md` + `ADR-NNN-*.md` | clarity-decision | One file per decision |
-| `product/prd.md` | clarity-prd | Features cite requirement IDs |
-| `product/ux-flows.md` | clarity-ux-flows | Screens, journeys, `stateDiagram` |
-| `contracts/api.md` + spec | clarity-api-contracts | `spec:` names the OpenAPI/GraphQL file |
-| `data/data-model.md` | clarity-data-model | Schema tables and an `erDiagram` |
+| `product/prd.md` | clarity-prd | Product brief: users, goals `G-###`, scope boundaries, product principles. No features |
+| `product/ux-standards.md` | clarity-ux-standards | Navigation, interaction patterns, accessibility, design system, state conventions. No screens |
+| `contracts/api.md` | clarity-api-contracts | API conventions. An optional `spec:` names a published OpenAPI/GraphQL contract the app must keep |
+| `data/data-model.md` | clarity-data-model | Core entities (`erDiagram`) and data rules. No feature tables |
 | `ops/setup-guide.md` | clarity-setup-guide | Never contains secret values |
 | `solution/solution-summary.md` | clarity-architecture | |
 | `summary.md` | clarity-message | |
@@ -110,7 +116,7 @@ fingerprint. Nothing needs committing for the checks to work.
 ```yaml
 mandatory:
   add: [ops/runbook.md]
-  remove: [product/ux-flows.md]
+  remove: [product/ux-standards.md]
 not_applicable:
   data/data-model.md: "Stateless service, no persistence"
 documents:                       # project-specific documents
@@ -159,3 +165,22 @@ approvers per document under `approvals` in the config. `clarity-approve` asks w
 approving, checks the name against the list, requires an explicit "I approve …", and records
 the name, the date and the document's current fingerprint. Any later edit voids that approval.
 Drafts, edited documents and stale documents can't be approved.
+
+## How compose uses clarity
+
+When a repo has `.clarity/`, the compose skills follow it. `compose feature paths --json`
+reports each document's declared status under `clarity`, and the shared guide
+`.compose/templates/compose/clarity.md` says what each step reads:
+
+| compose step | Takes from clarity |
+|---|---|
+| `/compose-constitution` | Derives the principles from the NFRs, constraints, standards, product principles, accepted ADRs, application-wide failure mitigations and conventions, citing each source (`[STD-002]`). Re-run it after clarity changes. |
+| `/compose-specify`, `/compose-clarify` | Actors, goals and scope boundaries. The spec's `Serves:` line cites goals and rules, and it doesn't ask what clarity answers. Its own `FR-###` are per feature. |
+| `/compose-plan` | Stack and components from the architecture and accepted ADRs, which aren't researched again. Contracts, data and screens follow the conventions. A **Clarity check** table sits next to the constitution check. |
+| `/compose-tasks` | Tasks for failure mitigations touching the feature, tests the standards require, and setup steps. |
+| `/compose-analyze` | Flags breaking a binding rule or accepted ADR as critical. |
+
+`complete` documents and `accepted` ADRs are binding, drafts are hints, and `n/a` documents are
+skipped. compose never edits `.clarity/`. A conflict is raised (or, in a headless run, recorded
+as `Clarity conflict:`), and a new application-wide decision is proposed for
+`/clarity-decision`.

@@ -27,6 +27,14 @@ If the description is empty, stop and ask the user what the feature should do.
    and `created`. Inside a compose workflow run this returns the run's feature and creates
    nothing, which is expected. Use these paths for everything below; never invent them.
 2. Load `spec.md` from `templates_dir` and keep its section order and headings.
+   **Clarity.** When the JSON's `clarity` is not null, read the guide at `clarity.guide`
+   (`.compose/templates/compose/clarity.md`) and the documents it lists for this step. They give the actors, the goals
+   (`G-###`) the feature can serve, the scope boundaries and the rules that apply. Fill
+   **Serves** with those IDs. Don't ask about anything they already answer. If the
+   description names a goal or an item under `## Feature ideas` in `.clarity/notes.md`,
+   start from it. A feature outside the product's scope boundaries is a conflict, and the
+   guide says how to handle it. The spec's own `FR-###` start at `FR-001` and never reuse
+   clarity IDs.
 3. Understand the description: actors, actions, data, constraints, and what success looks
    like. Fill the template:
    - **User stories** in priority order. Each must be independently valuable and testable,

@@ -1,10 +1,10 @@
 ---
 name: clarity-prd
-description: Write or revise the product requirements document (.clarity/product/prd.md) from the problem, stakeholders, requirements and solution. Every feature cites the FR/NFR IDs it delivers, and gaps in coverage are flagged. Use when the project needs a PRD, or when /clarity reaches the product stage.
-argument-hint: "[focus, extra sources or notes for the PRD]"
+description: Write or revise the product brief (.clarity/product/prd.md) from the problem, stakeholders, requirements and solution - overview, personas, goals with G-### IDs and metrics, scope boundaries and checkable product principles. It lists no features; each feature is specified with compose and cites these goals. Use when the project needs a product brief, or when /clarity reaches the product stage.
+argument-hint: "[focus, extra sources or notes for the product brief]"
 ---
 
-# Product requirements document
+# Product brief
 
 Focus, extra sources or notes from the user:
 
@@ -12,10 +12,11 @@ Focus, extra sources or notes from the user:
 $ARGUMENTS
 ```
 
-The PRD turns what the team already agreed (the problem, the people, the requirements, the
-chosen solution) into a product: who it is for, what it lets them do, what ships first, and
-how anyone will know it worked. It adds little that is new. Its value is in the joins: every
-feature traces to a requirement, every goal to a success criterion.
+The product brief turns what the team already agreed (the problem, the people, the rules, the
+chosen solution) into a product: who it is for, what it should achieve, where its boundaries
+are, and the principles every feature follows. It lists no features: each feature is
+specified on its own with compose (`compose-specify`) and cites the goals here. Its value is
+in the joins: every goal traces to a success criterion, every principle is checkable.
 
 ## Steps
 
@@ -26,9 +27,9 @@ feature traces to a requirement, every goal to a success criterion.
    - The `depends_on` documents: `.clarity/goal/problem.md`, `.clarity/goal/stakeholders.md`,
      `.clarity/goal/requirements.md`, `.clarity/solution/solution.md`. Also skim
      `.clarity/goal/open-questions.md` and `.clarity/decisions/`.
-   - The PRD's front matter `sources`, plus anything in the arguments. An existing PRD, pitch
-     or roadmap is the best seed; reuse its wording where it is still right.
-   - The repo, lightly: the README and any feature list tell you what already exists.
+   - The document's front matter `sources`, plus anything in the arguments. An existing PRD,
+     pitch or roadmap is a good seed; reuse its wording where it is still right.
+   - The repo, lightly: the README tells you what the product already is.
 2. **Create the file if needed.** If `.clarity/product/prd.md` doesn't exist, copy
    `.compose/templates/clarity/product/prd.md` there, then fill its sections. Keep
    `status: draft` while working, and save a rough draft early.
@@ -38,31 +39,31 @@ feature traces to a requirement, every goal to a success criterion.
    - **Users and personas**: the primary and secondary personas, drawn from the stakeholders
      who use the product. Give each a goal and a pain point; skip stakeholders who never touch
      it.
-   - **Goals and metrics**: each goal maps to a success criterion in the problem document and
-     has a measure, a baseline where known, and a target. A goal with no success criterion is
-     either a missing criterion (raise it) or not a goal.
-   - **Scope**: in this release and not in this release. Use the problem's scope and the
-     solution's phasing; name what was deliberately left out so nobody assumes it.
-   - **Features**: one entry per user-visible capability, citing the FR-### and NFR-### IDs it
-     delivers. Prioritise (must / should / could) when the release can't hold everything.
-   - **Release criteria**: what must be true to ship: the must-have features, the NFR targets
-     that gate release, and any launch, support or compliance conditions.
+   - **Goals and metrics**: each goal gets a stable `G-###` ID that feature specifications
+     cite, maps to a success criterion in the problem document, and has a measure, a
+     baseline where known, and a target. A goal with no success criterion is either a
+     missing criterion (raise it) or not a goal. Never renumber an existing ID.
+   - **Scope boundaries**: the areas features may cover, and what no feature should do. Use
+     the problem's scope; name what was deliberately left out so nobody assumes it.
+   - **Product principles**: the product rules every feature follows (for example "never
+     lose a user's draft"). Each one must be checkable in a review; drop or sharpen any that
+     isn't.
 4. **Check traceability** and show the result to the user:
-   - requirements no feature delivers (each needs a feature, a later release, or a note that
-     it is non-product, such as an internal constraint);
-   - features that cite no requirement (scope creep, or a missing requirement; ask which);
-   - goals not tied to a success criterion.
-5. **Ask only about the gaps** that remain: missing targets, unclear priorities, conflicts
+   - success criteria no goal covers, and goals not tied to a success criterion;
+   - principles that conflict with an NFR, constraint or standard.
+   If a source lists features, screens or functional behaviour, don't copy it here: note it in
+   `.clarity/notes.md` under `## Feature ideas` for `compose-specify`.
+5. **Ask only about the gaps** that remain: missing targets, vague principles, conflicts
    between sources and the requirements. Never re-ask what the documents already answer. Move
    quickly through what's obvious.
 6. **Finish** (see below).
 
 ## Not applicable
 
-A PRD rarely doesn't fit, but it can: a one-off internal migration, a research spike, a
-library with no product owner. If the evidence points that way, propose N/A and say why (for
-example, "no end users in the stakeholders; the only requirement is a data move"). Only on the
-user's agreement set `status: n/a` and a `reason:`. Never decide N/A alone.
+A product brief rarely doesn't fit, but it can: a one-off internal migration, a research
+spike, a library with no product owner. If the evidence points that way, propose N/A and say
+why (for example, "no end users in the stakeholders; the only goal is a data move"). Only on
+the user's agreement set `status: n/a` and a `reason:`. Never decide N/A alone.
 
 ## Unattended (`auto`)
 
@@ -74,9 +75,9 @@ conflicting>]` note, and propose any N/A only as a note. Never set `status: comp
 ## Finish
 
 - Remove every placeholder (`[TBD…]`, `[To be determined…]`, the bracketed prompts and the
-  example feature line) from the sections you filled. Keep HTML comments only where they help.
-- Notable product choices (dropping a persona, deferring a must-have requirement) deserve an
-  ADR: record one with the `clarity-decision` skill, or tell the user one should be recorded.
+  example goal line) from the sections you filled. Keep HTML comments only where they help.
+- Notable product choices (dropping a persona, narrowing the scope) deserve an ADR: record one
+  with the `clarity-decision` skill, or tell the user one should be recorded.
 - If you changed another document that is already `complete` (for example, adding a missing
   success criterion to the problem), leave its `status` and `reviewed` alone, and tell the
   user which documents you touched.
@@ -90,8 +91,8 @@ conflicting>]` note, and propose any N/A only as a note. Never set `status: comp
 
 ## Rules
 
-- Write for people and LLMs alike: short, concrete, no filler. A feature is what a user can
-  do, not how it is built.
-- Don't invent requirements in the PRD. A new need goes into `.clarity/goal/requirements.md`
-  with an ID first (tell the user), then the feature cites it.
+- Write for people and LLMs alike: short, concrete, no filler.
+- Goals and principles, not features. What a user can do is defined per feature with compose.
+- Don't invent rules here. A new NFR, constraint or standard goes into
+  `.clarity/goal/requirements.md` with an ID first (tell the user).
 - Talk about the product, not about files or front matter.

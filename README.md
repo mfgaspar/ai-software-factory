@@ -13,10 +13,12 @@ or by hand inside Claude Code with the same skills.
   `/compose-find-skills` (search and install other agent skills, with
   `npx skills`; adapted from vercel-labs/skills, MIT),
   `/compose-constitution`, and `/compose`, which operates compose itself.
-- **Clarity skills**, a separate family for thinking a project through before building it:
-  `/clarity` writes and validates a project's problem, requirements, solution, failure
-  analysis, architecture, ADRs, PRD, UX flows, API contracts, data model and setup guide in
-  `.clarity/` (adapted from microsoft/clarity-agent, MIT). See [Clarity skills](docs/clarity.md).
+- **Clarity skills**, a separate family for the application-level why, rules and how:
+  `/clarity` writes and validates a project's problem, goals, non-functional requirements and
+  standards, solution, failure analysis, architecture, ADRs, product brief, UX standards, API
+  conventions, data rules and setup guide in `.clarity/` (adapted from microsoft/clarity-agent,
+  MIT). The compose skills then specify and plan each feature within those rules. See
+  [Clarity skills](docs/clarity.md).
 - **Workflows** chain those skills with shell steps, review gates, loops, branches and
   hooks. Four are built in (`automated`, the default, plus `quick`, `full-cycle`, `bugfix`) and you can write your own.
 - **Traceability:** every message, tool call and result per step, with hooks nested.
@@ -68,9 +70,10 @@ In the repository you want to work on:
 compose init --engine claude
 ```
 
-This installs the skills into `.claude/skills/`, the templates into `.compose/templates/`,
-a starter constitution into `.compose/memory/constitution.md`, adds compose's local folders
-to `.gitignore` and registers the repo. Commit those files so your team gets the skills.
+This installs the skills into `.claude/skills/`, the templates into
+`.compose/templates/compose/` and `.compose/templates/clarity/`, a starter constitution into
+`.compose/memory/constitution.md`, adds compose's local folders to `.gitignore` and registers
+the repo. Commit those files so your team gets the skills.
 
 Run the `quick` workflow (specify → plan → tasks → implement → converge):
 

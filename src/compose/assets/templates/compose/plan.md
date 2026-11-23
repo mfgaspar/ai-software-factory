@@ -28,6 +28,15 @@
 |---|---|---|
 | [principle from the constitution] | [evidence] | PASS / VIOLATION |
 
+### Clarity check
+
+<!-- Only when the repo has .clarity/. One row per applicable NFR, constraint, standard,
+     accepted ADR and convention document (API, data, UX). Delete this section otherwise. -->
+
+| Rule | How this plan complies | Status |
+|---|---|---|
+| [e.g. ADR-002, NFR-001, API conventions] | [evidence] | PASS / CONFLICT |
+
 ## Project structure
 
 ### Documentation (this feature)

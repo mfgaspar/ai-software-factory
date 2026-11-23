@@ -11,18 +11,11 @@ sources: []
 approvals: []
 ---
 
-# Requirements
+# Requirements, constraints and standards
 
-Any solution must satisfy the requirements below. Each one has a stable ID that the PRD, API
-contracts and data model cite.
-
-## Functional requirements
-
-[To be determined. One entry per requirement:]
-
-- **FR-001 — [short name]:** [TBD — what the system must do]
-  - *Stakeholder:* [who needs it]
-  - *Acceptance:* [how to check it is met]
+The rules every feature of this application must follow. Functional requirements are not
+written here: each feature's specification defines them (`compose-specify`), and must meet
+the rules below. Each rule has a stable ID that the architecture, ADRs and feature plans cite.
 
 ## Non-functional requirements
 
@@ -35,4 +28,13 @@ accessibility, compliance, operability). Each one is measurable:]
 
 ## Constraints
 
-- [TBD — technical, business and organizational constraints]
+[TBD — technical, business and organizational limits the application must live within:]
+
+- **CON-001 — [short name]:** [TBD]
+
+## Standards
+
+[TBD — engineering standards every feature follows (coding, testing, security, review,
+documentation), each one checkable in a review:]
+
+- **STD-001 — [area]: [short name]:** [TBD — the rule, as MUST or SHOULD]

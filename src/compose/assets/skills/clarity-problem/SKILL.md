@@ -1,6 +1,6 @@
 ---
 name: clarity-problem
-description: Turn a vague idea into a clear problem statement, stakeholder map, testable FR/NFR requirements and a list of open questions in .clarity/goal/. Use at the start of a project, when the team isn't aligned on the problem, or to think through a "thinking"-strategy open question.
+description: Turn a vague idea into a clear problem statement, stakeholder map, testable non-functional requirements, constraints and standards (NFR/CON/STD) and a list of open questions in .clarity/goal/. Use at the start of a project, when the team isn't aligned on the problem, or to think through a "thinking"-strategy open question.
 argument-hint: "[what to clarify, or an open question like 'Q2' to think through]"
 ---
 
@@ -13,7 +13,7 @@ $ARGUMENTS
 ```
 
 Knowing what to build and why is the hard part. This conversation sharpens the problem, finds
-everyone who cares about it, and pins down what any solution must provide. It writes the goal
+everyone who cares about it, and pins down the rules any solution must follow. It writes the goal
 documents under `.clarity/goal/`: `problem.md`, `stakeholders.md`, `requirements.md` and
 `open-questions.md` (resolved questions move to `resolved-questions.md`). Stay domain-neutral:
 the project may not be software.
@@ -52,7 +52,10 @@ you go.
 3. **Separate problems from solutions.** Detailed "requirements" are often someone's solution.
    Acknowledge it, ask what problem it solves, and record the need ("timely awareness of schedule
    slips"), not the mechanism ("hourly email"). Compatibility with an existing workflow can be a
-   real requirement; record it as one. With non-technical stakeholders:
+   real requirement; record it as one. Functional behaviour ("users can export a report") is not
+   a requirement here: each feature's specification defines it later (`compose-specify`). Note
+   it in `.clarity/notes.md` under a `## Feature ideas` heading, one line each, and move on.
+   With non-technical stakeholders:
    - ask for outcomes, not implementations, and have them decide concrete edge cases;
    - classify constraints: permanent or temporary, critical or nice-to-have, impossible,
      expensive or merely difficult;
@@ -72,10 +75,11 @@ you go.
    system), concerns (for indirect stakeholders, the harms that could reach them).
 5. **Scope.** What is explicitly out? Which related problems aren't being solved? Where does
    this end and other systems begin? What can be assumed to exist?
-6. **Requirements.** What must be true for any solution to work, what is non-negotiable, what
-   would make a solution unacceptable, and which quality attributes matter. Each one is
-   testable, necessary ("what happens without it?") and traceable to a stakeholder or problem
-   aspect.
+6. **Requirements.** The rules every feature must follow: which quality attributes matter
+   (non-functional requirements), what limits the solution must live within (constraints), and
+   which engineering standards apply (coding, testing, security, review). Each one is testable
+   or checkable, necessary ("what happens without it?") and traceable to a stakeholder or
+   problem aspect.
 7. **Discovery check.** Are there fundamental unknowns that would change the solution approach?
    Signs: many solution paths hinging on unknown facts, "it depends on whether X" with nobody
    knowing X, stakeholders disagreeing about facts rather than priorities. Most projects pass
@@ -162,10 +166,12 @@ still help. Synthesize: ten minutes of talk is still two paragraphs.
 - `goal/stakeholders.md`: one subsection per stakeholder with type, engagement,
   characteristics, goals and concerns, in the template's shape. Dual stakeholders get one
   subsection per persona.
-- `goal/requirements.md`: functional requirements as `FR-001`, `FR-002`… and non-functional
-  ones as `NFR-001`… grouped by category, each with the stakeholder who needs it and an
-  acceptance check or measure, plus constraints (technical, business, organizational). IDs are
-  stable: never renumber or reuse one; mark a dropped requirement as withdrawn instead.
+- `goal/requirements.md`: non-functional requirements as `NFR-001`, `NFR-002`… grouped by
+  category, each with a measure and the stakeholder who needs it; constraints (technical,
+  business, organizational) as `CON-001`…; engineering standards as `STD-001`…, each a MUST or
+  SHOULD rule checkable in a review. No functional requirements: those go to `## Feature ideas`
+  in `.clarity/notes.md`. IDs are stable: never renumber or reuse one; mark a dropped
+  requirement as withdrawn instead.
 - `goal/open-questions.md`: as above.
 
 Add `sources:` entries for any supplied material you drew on. Record anything another stage will
@@ -202,13 +208,16 @@ conflicting>]` note, and propose any N/A only as a note. Never set `status: comp
 - **Accepting the framing.** Run the framing test even when the goal sounds concrete,
   especially then.
 - **Jumping to solutions.** "That's one possible solution. What problem would it solve?"
-- **Vague requirements.** "Fast" isn't a requirement; get a number.
+- **Vague requirements.** "Fast" isn't a requirement; get a number ("NFR-003 — performance:
+  search returns in under 1 s for 95% of queries").
+- **Features as requirements.** "Users can share a list" is a feature idea, not a rule; note it
+  for `compose-specify`.
 - **Missing stakeholders.** Ask about every category, adversarial and indirect included.
 - **Wants as needs.** Challenge each requirement: what happens without it?
 - **Transcribing.** Capture the essence, not the conversation.
 
 You're done when the problem fits in one or two sentences people nod at, every stakeholder and
-their needs are written down, requirements are sharp enough to judge solutions against, and
+their needs are written down, the rules are sharp enough to judge solutions against, and
 every "why?" has an answer.
 
 Adapted from microsoft/clarity-agent (problem-clarification.md), MIT License — see LICENSE.txt.

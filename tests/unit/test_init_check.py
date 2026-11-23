@@ -34,7 +34,7 @@ def test_init_fresh_repo(
     assert ".claude/skills/compose-specify/SKILL.md" in data["written"]
     assert ".claude/skills/compose/SKILL.md" in data["written"]
     assert ".compose/memory/constitution.md" in data["written"]
-    assert ".compose/templates/spec.md" in data["written"]
+    assert ".compose/templates/compose/spec.md" in data["written"]
     assert ".gitignore" in data["written"]
     assert "/.compose/runs/" in (git_repo / ".gitignore").read_text()
     # nothing is committed: the files are new and untracked

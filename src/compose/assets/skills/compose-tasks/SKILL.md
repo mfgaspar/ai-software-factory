@@ -18,6 +18,9 @@ $ARGUMENTS
    either is missing, say which skill to run first). Read whichever exist of
    `research_file`, `data-model.md`, `contracts/` and `quickstart.md` in the feature folder,
    and the template `tasks.md` in `templates_dir`.
+   When the JSON's `clarity` is not null, also read the guide at `clarity.guide` (`.compose/templates/compose/clarity.md`),
+   `.clarity/failures/failures.md`, the standards in `.clarity/goal/requirements.md` and
+   `.clarity/ops/setup-guide.md`.
 2. Take the user stories and their priorities from the spec, and the stack, structure and
    components from the plan.
 3. Write tasks in phases:
@@ -33,6 +36,10 @@ $ARGUMENTS
    - `[P]` only when the task touches different files from, and doesn't depend on, any
      unfinished task.
    - `[USn]` on user-story phase tasks only.
+   With `.clarity/`, add tasks for each failure mitigation that touches this feature, for
+   the tests the standards (`STD-###`) require (even when the spec didn't ask for tests),
+   and for any setup or configuration the feature needs. Cite the source in the
+   description, e.g. `(mitigates failures/<name>.md)`.
 5. After the phases, describe the dependencies between phases and stories, what can run in
    parallel, and the MVP (usually user story 1 alone).
 6. Write `tasks_file`.

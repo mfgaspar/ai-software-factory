@@ -16,7 +16,7 @@ from compose.core import store
 from compose.core.db import Database
 from compose.core.ids import new_id
 from compose.core.models import Feature, Repo
-from compose.repos import git
+from compose.repos import clarity, git
 
 FEATURE_ENV = "COMPOSE_FEATURE"
 SPECS_DIR = "specs"
@@ -116,7 +116,12 @@ class FeaturePaths:
     templates_dir: Path
 
     def to_json(self) -> dict[str, object]:
-        return {k: str(v) if isinstance(v, Path) else v for k, v in asdict(self).items()}
+        data: dict[str, object] = {
+            k: str(v) if isinstance(v, Path) else v for k, v in asdict(self).items()
+        }
+        # The application-level rules every feature follows, when the repo has them.
+        data["clarity"] = clarity.summary(self.repo_root)
+        return data
 
 
 def feature_paths(root: Path, name: str) -> FeaturePaths:
@@ -136,7 +141,7 @@ def feature_paths(root: Path, name: str) -> FeaturePaths:
         research_file=feature_dir / "research.md",
         checklists_dir=feature_dir / "checklists",
         constitution_file=root / ".compose" / "memory" / "constitution.md",
-        templates_dir=root / ".compose" / "templates",
+        templates_dir=root / ".compose" / "templates" / "compose",
     )
 
 

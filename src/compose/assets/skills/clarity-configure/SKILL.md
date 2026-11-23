@@ -36,7 +36,7 @@ touch it.
 2. **Propose.** Start from the manifest's mandatory set and propose changes, each with its
    evidence:
    - N/A candidates, for example "No UI code or UI requirements found, so mark
-     `product/ux-flows.md` N/A?", "No database or persistence, so `data/data-model.md` N/A?",
+     `product/ux-standards.md` N/A?", "No database or persistence, so `data/data-model.md` N/A?",
      or "No API, so `contracts/api.md` N/A?". Never propose N/A for a `never_na` document.
    - Custom documents the material or the user implies, such as a runbook or a compliance
      checklist. Each needs a template, its required headings, and what it depends on. Put
@@ -52,7 +52,7 @@ touch it.
 3. **Apply short-cuts.** Apply short-cuts from the arguments directly.
    - `mandatory: PRD, API, setup guide only` means: remove every manifest document except
      those named and the `never_na` ones.
-   - `no UI` means: propose ux-flows as N/A, with the reason.
+   - `no UI` means: propose ux-standards as N/A, with the reason.
 
    Map plain names to paths using the manifest's document titles.
 4. **Write.** Copy `.compose/templates/clarity/config.yml` (the commented starter) to

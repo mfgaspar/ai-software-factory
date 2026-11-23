@@ -4,6 +4,7 @@
 **Created**: [DATE]
 **Status**: Draft
 **Input**: "[the description as given]"
+**Serves**: [clarity goals and rules that apply, e.g. G-002; NFR-001, STD-003 — or "no .clarity/"]
 
 <!--
   A specification says WHAT the feature does and WHY, for the people who will use and
