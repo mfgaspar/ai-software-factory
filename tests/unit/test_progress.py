@@ -80,12 +80,19 @@ def test_live_line_in_a_terminal_stops_at_the_step_end(tmp_path: Path) -> None:
     progress = Progress(False, Console(file=buffer, width=60, force_terminal=True))
     _start(progress, tmp_path)
     assert progress.live is not None
-    progress(
-        _engine("usage_update", usage={"cost_usd": 0, "input_tokens": 1500, "output_tokens": 0})
-    )
-    assert "draft" in str(progress.status.__rich__()) and "1.5k tokens" in str(
-        progress.status.__rich__()
-    )
+    # what the screenshot showed as "49 tokens": cached context is most of what is read
+    usage = {
+        "cost_usd": 0,
+        "input_tokens": 49,
+        "output_tokens": 1200,
+        "cache_read_tokens": 45_000,
+        "cache_write_tokens": 2951,
+    }
+    progress(_engine("usage_update", usage=usage))
+    line = str(progress.status.__rich__())
+    assert line.startswith("draft · ") and line.endswith(" · 1.2k out · 48.0k in")
+    progress(_engine("usage_update", usage={**usage, "cost_usd": 0.41}))
+    assert str(progress.status.__rich__()).endswith(" · $0.4100")
     progress({"type": "step_finished", "exec_id": "e1", "step_id": "draft", "status": "completed"})
     assert progress.live is None
 

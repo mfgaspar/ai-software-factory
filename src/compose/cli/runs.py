@@ -205,25 +205,34 @@ def _clip_to(text: str, width: int) -> str:
     return text if len(text) <= width else text[: max(width - 1, 1)] + "…"
 
 
-def _tokens(count: int) -> str:
-    return f"{count / 1000:.1f}k tokens" if count >= 1000 else f"{count} tokens"
+def _count(n: int) -> str:
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    return f"{n / 1000:.1f}k" if n >= 1000 else str(n)
 
 
 class _StatusLine:
-    """The transient ``<step> · 2m14s · $0.41`` line under a running model step."""
+    """The transient ``<step> · 2m14s · 1.2k out · 48.0k in`` line under a running model
+    step. Claude reports the cost only when a step ends, so until then it shows tokens:
+    written (out) and read (in), cached context included, since that is most of what the
+    model reads each turn."""
 
     def __init__(self) -> None:
         self.step = ""
         self.started = 0.0
         self.cost = 0.0
-        self.tokens = 0
+        self.tokens_in = 0
+        self.tokens_out = 0
 
     def __rich__(self) -> Text:
         import time
 
         elapsed = duration(int((time.monotonic() - self.started) * 1000))
-        spent = money(self.cost) if self.cost else _tokens(self.tokens) if self.tokens else ""
-        parts = [self.step, elapsed] + ([spent] if spent else [])
+        parts = [self.step, elapsed]
+        if self.cost:
+            parts.append(money(self.cost))
+        elif self.tokens_in or self.tokens_out:
+            parts.append(f"{_count(self.tokens_out)} out · {_count(self.tokens_in)} in")
         return Text(" · ".join(parts), style="dim")
 
 
@@ -304,8 +313,10 @@ class Progress:
         elif kind == "usage_update":
             usage = inner.get("usage") or {}
             self.status.cost = float(usage.get("cost_usd") or 0)
-            self.status.tokens = int(usage.get("input_tokens") or 0) + int(
-                usage.get("output_tokens") or 0
+            self.status.tokens_out = int(usage.get("output_tokens") or 0)
+            self.status.tokens_in = sum(
+                int(usage.get(key) or 0)
+                for key in ("input_tokens", "cache_read_tokens", "cache_write_tokens")
             )
 
     def __call__(self, event: dict[str, Any]) -> None:
