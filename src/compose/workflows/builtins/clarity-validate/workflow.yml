@@ -1,0 +1,37 @@
+schema_version: "1.0"
+workflow:
+  id: clarity-validate
+  name: Validate the clarity foundation
+  version: 1.0.0
+  scope: repo
+  description: >
+    Validates the clarity foundation and records the verdict; on PASS, regenerates the
+    constitution when it is out of date, commits on the clarity branch and fast-forwards
+    the default branch.
+steps:
+  - id: validate
+    command: clarity-validate
+  - id: verdict
+    type: clarity
+    action: record-verdict
+    from_step: validate
+
+  - id: constitution-check
+    type: if
+    # regenerate the constitution only on PASS, when it wasn't generated from this content
+    condition: "{{ steps.verdict.output.result == 'PASS' and not steps.verdict.output.constitution_current }}"
+    then:
+      - id: constitution
+        command: compose-constitution
+        input:
+          args: from-clarity
+      - id: stamp
+        type: clarity
+        action: stamp-constitution
+
+  - id: commit
+    type: clarity
+    action: commit
+  - id: merge
+    type: clarity
+    action: merge

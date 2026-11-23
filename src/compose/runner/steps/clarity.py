@@ -8,6 +8,7 @@ default branch after a PASS that still holds. Only built-in workflows may use it
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from compose.clarity import branch, constitution, fingerprint, verdict
@@ -46,7 +47,12 @@ async def execute(rc: RunContext, step: ClarityStep, row: StepExec, scope: Scope
         fp = fingerprint.of_dir(workdir)
         verdict.write(workdir, found, fp, rc.shared.root_run_id)
         rc.emit("clarity_verdict", exec_id=row.id, result=found.result, fingerprint=fp)
-        return Outcome.ok(result=found.result, incomplete=found.incomplete, fingerprint=fp)
+        return Outcome.ok(
+            result=found.result,
+            incomplete=found.incomplete,
+            fingerprint=fp,
+            constitution_current=_constitution_fingerprint(workdir) == fp,
+        )
     if step.action == "stamp-constitution":
         path = workdir / constitution.CONSTITUTION_FILE
         if not path.is_file():
@@ -61,6 +67,11 @@ async def execute(rc: RunContext, step: ClarityStep, row: StepExec, scope: Scope
             return Outcome.failed(f"could not commit the clarity files: {exc}")
         return Outcome.ok(sha=sha)
     return _merge(rc, row)
+
+
+def _constitution_fingerprint(workdir: Path) -> str | None:
+    path = workdir / constitution.CONSTITUTION_FILE
+    return constitution.read_text(path.read_text(encoding="utf-8")) if path.is_file() else None
 
 
 def _merge(rc: RunContext, row: StepExec) -> Outcome:

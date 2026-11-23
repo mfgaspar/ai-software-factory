@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from compose.clarity import preflight
 from compose.core import locks, store
 from compose.core.models import Feature, Run, RunStatus
 from compose.repos import git
@@ -66,13 +67,16 @@ async def test_feature_run_sets_scope_feature(env: Env) -> None:
     assert (env.worktree(run) / "probe.txt").read_text() == "feature|001-thing"
 
 
-async def test_second_repo_run_refused_while_one_is_paused(env: Env) -> None:
+async def test_second_repo_run_refused_while_one_is_paused(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
     runner = env.runner()
     paused = await runner.start(env.repo, env.workflow(PAUSING_WORKFLOW))
     assert paused.status is RunStatus.PAUSED
     with pytest.raises(RunError, match=f"active clarity run \\({paused.id}\\)"):
         runner.create_run(env.repo, env.workflow(REPO_WORKFLOW, name="tidy"))
-    # feature runs aren't affected
+    # feature runs aren't affected (past the pre-run check: clarity has started here)
+    monkeypatch.setattr(preflight, "check", lambda *a, **k: preflight.Preflight())
     feature_wf = env.workflow(FEATURE_WORKFLOW, name="f")
     assert runner.create_run(env.repo, feature_wf).feature_id is not None
     runner.request_abort(paused.id)

@@ -191,7 +191,12 @@ async def test_clarity_step_records_commits_and_merges_on_pass(env: Env) -> None
     assert run.status is RunStatus.COMPLETED, run.error
     workdir = env.worktree(run)
     fp = fingerprint.of_dir(workdir)
-    assert _output(env, run, "verdict") == {"result": "PASS", "incomplete": 0, "fingerprint": fp}
+    assert _output(env, run, "verdict") == {
+        "result": "PASS",
+        "incomplete": 0,
+        "fingerprint": fp,
+        "constitution_current": True,
+    }
     text = (workdir / constitution.CONSTITUTION_FILE).read_text()
     assert constitution.read_text(text) == fp
     sha = _output(env, run, "commit")["sha"]

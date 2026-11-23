@@ -21,7 +21,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from compose.clarity.questions import Question
-from compose.cli.common import console, handle_errors, open_store, print_json
+from compose.cli.common import console, err_console, handle_errors, open_store, print_json
 from compose.core import procs
 from compose.core.db import Database
 from compose.core.home import Home
@@ -343,6 +343,8 @@ def run(
         target = registry.resolve_repo(db, repo, Path.cwd())
         runner = _make_runner(db, home, interactive=ask, progress=progress)
         created = runner.create_run(target, workflow, values, feature=feature)
+        for warning in [] if as_json else runner.last_warnings:  # --json: K8 puts them in
+            err_console.print(f"[yellow]warning:[/yellow] {warning}", highlight=False)
         if detach:
             pid = spawn(home, created.id, Path(target.path))
             if as_json:

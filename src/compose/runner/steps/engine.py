@@ -88,7 +88,8 @@ async def execute(
     rc: RunContext, step: CommandStep | PromptStep, row: StepExec, scope: Scope
 ) -> Outcome:
     if isinstance(step, CommandStep):
-        args = rc.render_text(step.input.args, scope) if step.input.args else None
+        # an empty optional input leaves stray spaces (``"{{ inputs.sources }} draft"``)
+        args = (rc.render_text(step.input.args, scope).strip() or None) if step.input.args else None
         task = EngineTask.skill(step.command, args)
     else:
         task = EngineTask.prompt(rc.render_text(step.prompt, scope))

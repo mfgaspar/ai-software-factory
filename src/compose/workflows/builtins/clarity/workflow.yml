@@ -1,0 +1,71 @@
+schema_version: "1.0"
+workflow:
+  id: clarity
+  name: Clarity foundation
+  version: 1.0.0
+  scope: repo
+  description: >
+    Drafts the clarity foundation from the sources, asks and applies the questions it
+    raises (mixed mode, up to 4 rounds), regenerates the constitution from it, validates,
+    commits on the clarity branch and, on PASS, fast-forwards the default branch.
+inputs:
+  sources:
+    type: string
+    default: ""
+    description: Paths or URLs to draft from, space-separated, passed to /clarity as given.
+  mode:
+    type: string
+    default: mixed
+    enum: [mixed, auto]
+    description: >
+      mixed asks the pending questions and applies the answers; auto only drafts and
+      leaves its questions in .clarity/questions.yml for later.
+steps:
+  - id: draft
+    command: clarity
+    input:
+      args: "{{ inputs.sources }} draft"
+
+  - id: ask-check
+    type: if
+    condition: "{{ inputs.mode == 'mixed' }}"
+    then:
+      # repeat while questions other than approvals are pending after apply, up to 4 rounds
+      - id: rounds
+        type: do-while
+        max_iterations: 4
+        condition: "{{ steps.count.output.holding > 0 }}"
+        steps:
+          - id: questions
+            type: questions
+            file: .clarity/questions.yml
+          - id: apply
+            command: clarity
+            input:
+              args: apply
+          - id: count
+            type: questions
+            file: .clarity/questions.yml
+            ask: false
+
+  - id: constitution
+    command: compose-constitution
+    input:
+      args: from-clarity
+  - id: stamp
+    type: clarity
+    action: stamp-constitution
+
+  - id: validate
+    command: clarity-validate
+  - id: verdict
+    type: clarity
+    action: record-verdict
+    from_step: validate
+
+  - id: commit
+    type: clarity
+    action: commit
+  - id: merge
+    type: clarity
+    action: merge

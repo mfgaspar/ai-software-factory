@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from compose.clarity import branch as clarity_branch
+from compose.clarity import preflight
 from compose.clarity.questions import Question
 from compose.core import locks, store
 from compose.core.config import Config, load_config
@@ -647,6 +648,7 @@ class Runner:
         self.config = config or load_config(home)
         self.interaction = interaction or Interaction()
         self.on_event = on_event
+        self.last_warnings: list[str] = []  # the pre-run check's, from the last create_run
 
     # ---------------------------------------------------------------- creating
 
@@ -704,8 +706,12 @@ class Runner:
     ) -> Run:
         """Validate inputs, pick the feature and write the run (status ``created``).
 
-        No workflow means the configured default (``defaults.workflow``).
+        No workflow means the configured default (``defaults.workflow``). A feature run
+        passes the pre-run check first (:mod:`compose.clarity.preflight`): problems raise
+        :class:`~compose.clarity.preflight.PreflightError` before anything is written;
+        warnings go on the ``run_created`` event and in :attr:`last_warnings`.
         """
+        self.last_warnings = []
         workflow = workflow or self.config.defaults.workflow
         loaded = (
             loader.resolve(workflow, Path(repo.path)) if isinstance(workflow, str) else workflow
@@ -718,7 +724,12 @@ class Runner:
                 raise RunError(f"{definition.id} is a repo-scoped workflow; it takes no feature")
             self._check_no_repo_run(repo)
             feat = None
+            warnings: list[str] = []
         else:
+            checked = preflight.check(repo, clarity_branch=self.config.clarity.branch)
+            if checked.problems:
+                raise preflight.PreflightError(checked.problems)
+            warnings = checked.warnings
             feat = self._feature_for(repo, definition, resolved, feature)
             held = locks.read_lock(self.db, locks.feature_lock_key(feat.id))
             if held is not None and not locks.is_stale(held):
@@ -741,7 +752,15 @@ class Runner:
                 {"type": "run_created", "run_id": run.id, "feature": None, "scope": "repo"}
             )
         else:
-            files.append_event({"type": "run_created", "run_id": run.id, "feature": feat.name})
+            files.append_event(
+                {
+                    "type": "run_created",
+                    "run_id": run.id,
+                    "feature": feat.name,
+                    "warnings": warnings,
+                }
+            )
+        self.last_warnings = warnings
         return run
 
     def _check_no_repo_run(self, repo: Repo) -> None:

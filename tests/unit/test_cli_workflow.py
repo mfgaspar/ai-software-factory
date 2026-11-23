@@ -13,7 +13,14 @@ def test_list_and_info(
 ) -> None:
     monkeypatch.chdir(git_repo)
     listed = json.loads(cli("workflow", "list", "--json").output)
-    assert {w["id"] for w in listed} == {"bugfix", "full-cycle", "automated", "quick"}
+    assert {w["id"] for w in listed} == {
+        "bugfix",
+        "full-cycle",
+        "automated",
+        "quick",
+        "clarity",
+        "clarity-validate",
+    }
 
     result = cli("workflow", "info", "full-cycle", "--json")
     assert result.exit_code == 0, result.output
