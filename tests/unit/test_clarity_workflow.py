@@ -191,3 +191,16 @@ async def test_validate_leaves_the_constitution_alone_on_fail(env: Env) -> None:
     assert constitution.read_text((env.worktree(run) / constitution.CONSTITUTION_FILE).read_text())
     assert _output(env, run, "merge")["merged"] is False
     assert git.rev_parse(env.repo_path, "main") == main
+
+
+def test_engine_steps_may_run_the_hash_command() -> None:
+    """Headless clarity steps compute body hashes with the manifest's awk | git hash-object."""
+    from compose.workflows import loader
+
+    for workflow_id in ("clarity", "clarity-validate"):
+        loaded = loader.resolve(workflow_id, None)
+        for _, step, _ in loaded.definition.iter_steps():
+            if getattr(step, "command", None) is None:
+                continue
+            tools = step.engine_options["allowed_tools"]  # type: ignore[attr-defined]
+            assert "Bash(awk:*)" in tools and "Bash(git hash-object:*)" in tools, step.id

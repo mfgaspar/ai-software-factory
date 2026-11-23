@@ -27,6 +27,9 @@ steps:
       args: "{{ inputs.sources }} draft"
     # drafting the whole foundation is the largest single step compose runs
     limits: {max_cost_usd: 25}
+    engine_options:
+      # the body-hash command from the clarity manifest, which headless steps must run
+      allowed_tools: ["Bash(awk:*)", "Bash(git hash-object:*)"]
 
   - id: ask-check
     type: if
@@ -46,6 +49,8 @@ steps:
             input:
               args: apply
             limits: {max_cost_usd: 10}
+            engine_options:
+              allowed_tools: ["Bash(awk:*)", "Bash(git hash-object:*)"]
           - id: count
             type: questions
             file: .clarity/questions.yml
@@ -55,12 +60,18 @@ steps:
     command: compose-constitution
     input:
       args: from-clarity
+    engine_options:
+      # the body-hash command from the clarity manifest, which headless steps must run
+      allowed_tools: ["Bash(awk:*)", "Bash(git hash-object:*)"]
   - id: stamp
     type: clarity
     action: stamp-constitution
 
   - id: validate
     command: clarity-validate
+    engine_options:
+      # the body-hash command from the clarity manifest, which headless steps must run
+      allowed_tools: ["Bash(awk:*)", "Bash(git hash-object:*)"]
   - id: verdict
     type: clarity
     action: record-verdict

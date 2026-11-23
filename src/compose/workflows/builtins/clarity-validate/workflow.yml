@@ -11,6 +11,9 @@ workflow:
 steps:
   - id: validate
     command: clarity-validate
+    engine_options:
+      # the body-hash command from the clarity manifest, which headless steps must run
+      allowed_tools: ["Bash(awk:*)", "Bash(git hash-object:*)"]
   - id: verdict
     type: clarity
     action: record-verdict
@@ -25,6 +28,8 @@ steps:
         command: compose-constitution
         input:
           args: from-clarity
+        engine_options:
+          allowed_tools: ["Bash(awk:*)", "Bash(git hash-object:*)"]
       - id: stamp
         type: clarity
         action: stamp-constitution
