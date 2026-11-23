@@ -25,6 +25,8 @@ steps:
     command: clarity
     input:
       args: "{{ inputs.sources }} draft"
+    # drafting the whole foundation is the largest single step compose runs
+    limits: {max_cost_usd: 25}
 
   - id: ask-check
     type: if
@@ -43,6 +45,7 @@ steps:
             command: clarity
             input:
               args: apply
+            limits: {max_cost_usd: 10}
           - id: count
             type: questions
             file: .clarity/questions.yml

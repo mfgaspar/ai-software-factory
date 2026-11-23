@@ -67,6 +67,18 @@ compose abort <run>
 - A run whose process died is marked failed the next time compose looks, and can be
   resumed. Only one run at a time per feature.
 
+## Clarity and build
+
+| command | what it does |
+|---|---|
+| `compose clarity [SOURCES…] [--mode mixed\|auto\|interactive] [-d] [--json]` | start a clarity run on the `clarity` branch (mixed by default). A source named like a subcommand needs `./` |
+| `compose clarity status [--json]` | each document's status, the verdict and whether it's current, open questions, constitution currency, and whether `compose build` would start (no model call) |
+| `compose clarity questions [--json]` | the pending questions |
+| `compose clarity answer ID ANSWER [--by NAME] [--no-resume] [-d]` | record an answer; resumes the paused clarity run once nothing it asked is pending |
+| `compose clarity validate [-d] [--json]` | run `/clarity-validate` as a tracked run; exits 1 on FAIL |
+| `compose clarity merge [--json]` | retry merging a passing `clarity` branch into the default branch; exits 1 while pending |
+| `compose build DESCRIPTION [--workflow id] [-i k=v…] [--feature NNN-name] [-d] [--json]` | run the default workflow with DESCRIPTION as its spec, after the pre-run check; warnings go to stderr and under `warnings` in the JSON |
+
 ## Reports
 
 ```bash

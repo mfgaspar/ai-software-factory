@@ -226,7 +226,7 @@ Invoke `clarity-validate`, and show its table and its last line (`CLARITY: PASS`
 `CLARITY: FAIL (<n> incomplete)`). After it, add one plain sentence: what's done, and who needs
 to do what next, for example "Ana needs to approve the PRD: she can run `/clarity-approve
 product/prd.md`". When the project uses compose, also suggest `/compose-constitution from-clarity` to
-regenerate the constitution from these documents. (A compose clarity run does both for you.)
+regenerate the constitution from these documents. (A `compose clarity` run does both for you.)
 
 ## Resuming, re-runs and loops
 
@@ -368,8 +368,8 @@ doesn't use the questions file.
 ### `auto`
 
 Use `auto` when the user says "just draft everything". It runs `draft` only and never asks.
-Its questions stay in the file, for a later `/clarity` (mixed) run, or for compose's clarity
-answer command. Finish with a short report of the pending questions.
+Its questions stay in the file, for a later `/clarity` (mixed) run, or for
+`compose clarity answer`. Finish with a short report of the pending questions.
 
 `auto` **never** sets `status: complete` or `n/a`, never writes `reviewed` hashes, and never
 records approvals. Those need a person.

@@ -7,12 +7,10 @@ writes the constitution and ``clarity-validate`` passes when nothing is pending.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-import yaml
 
 from compose.clarity import constitution, fingerprint, questions, verdict
 from compose.clarity.questions import Question
@@ -22,62 +20,8 @@ from compose.engines.fake import Script, edit
 from compose.repos import git
 from compose.runner.errors import InputError
 from compose.workflows import loader
+from tests.unit.clarity_helpers import APPROVAL, GAP, QFILE, ScriptFor, skills
 from tests.unit.runner_helpers import Env, interaction
-
-QFILE = ".clarity/questions.yml"
-GAP = {"id": "Q-001", "kind": "gap", "question": "Which roles?", "recommended": "3"}
-APPROVAL = {
-    "id": "Q-009",
-    "kind": "approval",
-    "question": "Approve the PRD?",
-    "options": ["approve", "reject"],
-    "free_text": False,
-    "approver": "someone-else",
-}
-ScriptFor = Callable[[EngineTask, Path, EngineOptions], Script]
-
-
-def _load(cwd: Path) -> list[dict[str, object]]:
-    path = cwd / QFILE
-    if not path.is_file():
-        return []
-    return list((yaml.safe_load(path.read_text()) or {}).get("questions") or [])
-
-
-def _dump(items: list[dict[str, object]]) -> str:
-    return yaml.safe_dump({"questions": items}, sort_keys=False)
-
-
-def skills(
-    *, drafted: list[dict[str, object]] | None = None, always_ask: bool = False
-) -> ScriptFor:
-    """Plausible clarity skills. ``always_ask``: apply raises a new gap every round."""
-    first = [GAP] if drafted is None else drafted
-
-    def script(task: EngineTask, cwd: Path, options: EngineOptions) -> Script:
-        args = task.args or ""
-        if task.text == "clarity" and args.endswith("draft"):
-            acts = edit(".clarity/product/prd.md", f"# PRD\nFrom: {args}\n")
-            return Script([*acts, *edit(QFILE, _dump(_load(cwd) or list(first)))])
-        if task.text == "clarity" and args == "apply":
-            items = _load(cwd)
-            if always_ask:
-                n = len(items) + 1
-                items.append({"id": f"Q-{n:03}", "kind": "gap", "question": f"More {n}?"})
-            elif not any(q["kind"] == "review" for q in items):
-                items.append({"id": "Q-002", "kind": "review", "question": "Confirm?"})
-            notes = "".join(f"- {q['id']}: {q.get('answer')}\n" for q in items)
-            acts = edit(".clarity/product/prd.md", f"# PRD\n{notes}")
-            return Script([*acts, *edit(QFILE, _dump(items))])
-        if task.text == "compose-constitution":
-            return Script(edit(constitution.CONSTITUTION_FILE, "# Constitution\n"))
-        if task.text == "clarity-validate":
-            pending = [q for q in _load(cwd) if q.get("answer") is None]
-            last = f"CLARITY: FAIL ({len(pending)} incomplete)" if pending else "CLARITY: PASS"
-            return Script(final_text=f"Checked.\n{last}")
-        return Script()
-
-    return script
 
 
 def _workflow(name: str = "clarity") -> loader.LoadedWorkflow:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import typer
 
 from compose import __version__
-from compose.cli import feature, repo, runs, serve, setup, workflow
+from compose.cli import build, clarity, feature, repo, runs, serve, setup, workflow
 
 app = typer.Typer(
     name="compose",
@@ -16,9 +16,11 @@ app = typer.Typer(
 app.add_typer(repo.app, name="repo")
 app.add_typer(feature.app, name="feature")
 app.add_typer(workflow.app, name="workflow")
+app.add_typer(clarity.app, name="clarity")
 app.command("init")(setup.init)
 app.command("check")(setup.check)
 app.command("run")(runs.run)
+app.command("build")(build.build)
 app.command("status")(runs.status)
 app.command("resume")(runs.resume)
 app.command("abort")(runs.abort)

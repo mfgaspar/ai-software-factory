@@ -11,11 +11,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from compose.clarity import branch, constitution, fingerprint, verdict
+from compose.clarity import branch, constitution, fingerprint, service, verdict
 from compose.core.models import StepExec
 from compose.repos.git import GitError
 from compose.runner.context import Scope
-from compose.runner.errors import RunError
 from compose.runner.steps.base import Outcome
 from compose.workflows.schema import ClarityStep
 
@@ -76,22 +75,9 @@ def _constitution_fingerprint(workdir: Path) -> str | None:
 
 def _merge(rc: RunContext, row: StepExec) -> Outcome:
     """Merge only on a recorded PASS that still describes the documents; never fail."""
-    workdir = rc.worktree
-    path = workdir / verdict.VERDICT_FILE
-    recorded = verdict.from_text(path.read_text(encoding="utf-8")) if path.is_file() else None
-    reason: str | None
-    try:
-        if recorded is None or not recorded.verdict.passed:
-            reason = "no PASS verdict is recorded"
-        elif recorded.fingerprint != fingerprint.of_dir(workdir):
-            reason = "the clarity documents changed since the verdict; validate again"
-        else:
-            outcome = branch.merge_into_default(rc.repo, workdir)
-            reason = None if outcome.merged else outcome.pending_reason
-    except (GitError, RunError, OSError) as exc:
-        reason = f"could not merge: {exc}"
-    if reason is not None:
-        rc.emit("clarity_merge_pending", exec_id=row.id, reason=reason)
-        return Outcome.ok(merged=False, pending_reason=reason)
+    outcome = service.merge_if_passing(rc.repo, rc.worktree)
+    if not outcome.merged:
+        rc.emit("clarity_merge_pending", exec_id=row.id, reason=outcome.pending_reason)
+        return Outcome.ok(merged=False, pending_reason=outcome.pending_reason)
     rc.emit("clarity_merged", exec_id=row.id, branch=branch.default_branch(rc.repo))
     return Outcome.ok(merged=True, pending_reason=None)

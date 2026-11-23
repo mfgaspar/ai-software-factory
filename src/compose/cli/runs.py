@@ -11,6 +11,7 @@ import asyncio
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -25,7 +26,7 @@ from compose.cli.common import console, err_console, handle_errors, open_store, 
 from compose.core import procs
 from compose.core.db import Database
 from compose.core.home import Home
-from compose.core.models import Repo, RunStatus
+from compose.core.models import Repo, Run, RunStatus
 from compose.engines.registry import EngineRegistry, default_registry
 from compose.repos import registry
 from compose.runner.recovery import recover_stale_runs
@@ -243,14 +244,66 @@ def spawn(home: Home, run_id: str, cwd: Path) -> int:
     return process.pid
 
 
-def _finish(db: Database, home: Home, run_id: str, as_json: bool) -> None:
+def _finish(
+    db: Database,
+    home: Home,
+    run_id: str,
+    as_json: bool,
+    *,
+    warnings: list[str] | None = None,
+    after: Callable[[dict[str, Any]], int | None] | None = None,
+) -> None:
+    """Print the run's outcome and exit with its code. ``after`` runs once the outcome is
+    printed and may return another exit code."""
     detail = views.run_detail(db, home, run_id)
     status = RunStatus(detail["status"])
+    if warnings is not None:
+        detail["warnings"] = warnings
     if as_json:
         print_json(detail)
     else:
         _print_outcome(detail)
-    raise typer.Exit(EXIT_CODES.get(status, 0))
+    override = after(detail) if after else None
+    raise typer.Exit(override if override is not None else EXIT_CODES.get(status, 0))
+
+
+def follow(
+    db: Database,
+    home: Home,
+    runner: Runner,
+    target: Repo,
+    created: Run,
+    *,
+    detach: bool,
+    as_json: bool,
+    progress: Progress | None,
+    warnings: list[str] | None = None,
+    after: Callable[[dict[str, Any]], int | None] | None = None,
+) -> None:
+    """Run a created run in the foreground (then exit with its code) or in the background.
+    Warnings go to stderr, and in the JSON under ``warnings``."""
+    for warning in [] if as_json else warnings or []:
+        err_console.print(f"[yellow]warning:[/yellow] {warning}", highlight=False)
+    if detach:
+        pid = spawn(home, created.id, Path(target.path))
+        if as_json:
+            extra = {} if warnings is None else {"warnings": warnings}
+            print_json({**views.run_brief(db, created), "pid": pid, **extra})
+        else:
+            console.print(
+                f"Started run [bold]{created.id}[/bold] in the background.\n"
+                f"Follow it with: compose status {created.id}",
+                highlight=False,
+            )
+        return
+    if progress is not None:
+        on = views.run_brief(db, created)["feature"] or "clarity"
+        console.print(
+            f"Run [bold]{created.id}[/bold]: {created.workflow_id} on {on}",
+            highlight=False,
+        )
+    asyncio.run(runner.execute(created.id))
+    _finish(db, home, created.id, as_json, warnings=warnings, after=after)
 
 
 def _print_outcome(detail: dict[str, Any]) -> None:
@@ -343,27 +396,17 @@ def run(
         target = registry.resolve_repo(db, repo, Path.cwd())
         runner = _make_runner(db, home, interactive=ask, progress=progress)
         created = runner.create_run(target, workflow, values, feature=feature)
-        for warning in [] if as_json else runner.last_warnings:  # --json: K8 puts them in
-            err_console.print(f"[yellow]warning:[/yellow] {warning}", highlight=False)
-        if detach:
-            pid = spawn(home, created.id, Path(target.path))
-            if as_json:
-                print_json({**views.run_brief(db, created), "pid": pid})
-            else:
-                console.print(
-                    f"Started run [bold]{created.id}[/bold] in the background.\n"
-                    f"Follow it with: compose status {created.id}",
-                    highlight=False,
-                )
-            return
-        if progress is not None:
-            on = views.run_brief(db, created)["feature"] or "clarity"
-            console.print(
-                f"Run [bold]{created.id}[/bold]: {created.workflow_id} on {on}",
-                highlight=False,
-            )
-        asyncio.run(runner.execute(created.id))
-        _finish(db, home, created.id, as_json)
+        follow(
+            db,
+            home,
+            runner,
+            target,
+            created,
+            detach=detach,
+            as_json=as_json,
+            progress=progress,
+            warnings=runner.last_warnings,
+        )
 
 
 @handle_errors
