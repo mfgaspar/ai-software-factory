@@ -206,6 +206,7 @@ companions:
   notes.md: notes.md
   observations.md: observations.md
   goal/resolved-questions.md: goal/resolved-questions.md
+  questions.yml: questions.yml
 
 # Templates skills copy when they need them (not documents on their own).
 helpers:

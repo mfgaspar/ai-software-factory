@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from compose.repos import clarity, features
+from compose.clarity import summary as clarity
+from compose.repos import features
 
 
 def _doc(root: Path, path: str, front: str) -> None:

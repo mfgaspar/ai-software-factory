@@ -1,0 +1,6 @@
+# Clarity questions: raised by the clarity skills, answered with `compose clarity answer`.
+# See docs/clarity.md ("The questions file") for every field and rule.
+#
+# Skills write questions. compose writes only `answer`, `answered_by` and `answered_at`.
+# A question is pending while its `answer` is null (and it isn't `obsolete`).
+questions: []

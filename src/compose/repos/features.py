@@ -12,11 +12,12 @@ import unicodedata
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from compose.clarity import summary as clarity
 from compose.core import store
 from compose.core.db import Database
 from compose.core.ids import new_id
 from compose.core.models import Feature, Repo
-from compose.repos import clarity, git
+from compose.repos import git
 
 FEATURE_ENV = "COMPOSE_FEATURE"
 SPECS_DIR = "specs"
