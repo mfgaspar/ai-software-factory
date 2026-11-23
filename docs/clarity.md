@@ -1,39 +1,250 @@
-# Clarity skills
+# Clarity and build
 
-The clarity skills settle an application's **why**, its **rules** and its **how** before
-features are built. They produce a reviewed set of documents in `.clarity/`: the problem,
-stakeholders, non-functional requirements, constraints and standards, open questions,
-solution, failure analysis, architecture, ADRs, product brief, UX standards, API conventions,
-domain model and data rules, setup guide and summaries. Then they check that every mandatory
-document is complete.
+compose is a software factory with two steps:
+
+1. **`compose clarity`, the foundation.** It settles the application's **why**, its **rules**
+   and its **how** once: the problem, stakeholders, non-functional requirements, constraints
+   and standards, open questions, solution, failure analysis, architecture, ADRs, product
+   brief, UX standards, API conventions, domain model and data rules, setup guide and
+   summaries, in `.clarity/`. This is where people are involved: they answer questions,
+   confirm the foundation and approve it.
+2. **`compose build`, delivery.** It specifies and builds features autonomously, one at a
+   time, inside that foundation.
+
+```bash
+compose clarity docs/            # draft from your documents, then answer what's still open
+compose clarity status           # documents, verdict, questions, whether a build can start
+compose build "Wishlist for signed-in users"
+```
 
 Clarity never holds the **what** of a feature: functional requirements, feature lists,
 screens, endpoints or feature tables. compose defines those one feature at a time
 (`/compose-specify`, then `/compose-plan`), inside clarity's rules. See
 [How compose uses clarity](#how-compose-uses-clarity).
 
-They're adapted from [microsoft/clarity-agent](https://github.com/microsoft/clarity-agent)
-(MIT), which does the same with Python code. Here the same work runs through Claude Code
-skills: plain Markdown instructions plus data files, with no runtime. The skills are
-independent of the compose workflows: they don't call compose commands, and workflows don't
-call them. compose installs them alongside its own skills, with `compose init` and in every
-workflow worktree.
+The work itself is done by the clarity skills, Claude Code skills adapted from
+[microsoft/clarity-agent](https://github.com/microsoft/clarity-agent) (MIT): plain Markdown
+instructions plus data files, with no runtime. compose orchestrates them as tracked runs; it
+doesn't reimplement them. They also work by hand in Claude Code (see
+[The clarity skills by hand](#the-clarity-skills-by-hand)). compose installs them alongside its
+own skills, with `compose init` and in every run's worktree.
 
-## Quick start
+## compose clarity
+
+```bash
+compose clarity [SOURCES...] [--mode mixed|auto|interactive] [-d] [--json]
+```
+
+Sources are paths or URLs (documents, folders, issues), passed to `/clarity` as given. A
+clarity run is a run like any other: it shows in `compose status`, `compose trace` and
+`compose cost`, and through the [HTTP API](api.md). There is one active clarity run per repo,
+paused ones included: starting another is refused until you answer it, or
+`compose abort <run>`. Every clarity command takes `--repo`; the [CLI reference](cli.md#clarity-and-build)
+lists all options.
+
+### Modes
+
+| Mode | What happens | People |
+|---|---|---|
+| `mixed` (default) | drafts everything unattended, then asks only what is still open, in rounds, most important first, and applies the answers | answer the questions |
+| `auto` | drafts everything from the sources and asks nothing. The verdict is always FAIL; its questions stay in the questions file for a later mixed run or `compose clarity answer` | none |
+| `interactive` | starts Claude Code in the clarity worktree with `/clarity <sources> interactive`, attached to your terminal (the stage-by-stage conversation). When the session ends, compose runs `clarity-validate` as a tracked run | the whole conversation |
+
+`interactive` needs a terminal and can't be detached; the API offers `mixed` and `auto` only.
+
+### How mixed works
+
+A `mixed` run is the built-in `clarity` workflow:
+
+1. **draft** (`/clarity <sources> draft`): reads every source and the code once, proposes the
+   setup (`.clarity/config.yml`: which documents are mandatory, which don't apply, who
+   approves), scaffolds and drafts every document, and writes questions for what it can't
+   settle. Only **mandatory** documents raise questions; gaps in the others stay as
+   placeholder notes.
+2. **Rounds**, at most 4: the `questions` step asks the pending questions, then **apply**
+   (`/clarity apply`) applies the answers and raises the next ones. The loop repeats while
+   questions other than approvals are pending. The questions come in this order:
+   - **setup**: confirm or correct the proposed mandatory set, N/A list and approvers;
+   - **gap** and **conflict**: what stops a mandatory document from being completed, and
+     unresolved blocking open questions;
+   - **review**: once nothing else is pending, one summary of the whole foundation, answered
+     `confirm` or with corrections. `confirm` marks every mandatory document complete (or
+     n/a with its reason);
+   - **approval**: after a confirmed review, one per configured approver.
+3. **constitution** (`/compose-constitution from-clarity`) regenerates the constitution from
+   the documents, and compose stamps it with the clarity fingerprint.
+4. **validate** (`/clarity-validate`); compose records the verdict, commits, and on PASS merges
+   (see [The clarity branch](#the-clarity-branch)).
+
+On a terminal in the foreground, compose asks each question there: it shows the options and
+the recommendation, and Enter takes the recommendation. Otherwise (`-d`, `--no-interactive`,
+the API) the run **pauses** at the questions step until they're answered.
+
+Approvals never hold a run. A run doesn't wait for an absent approver: when only approvals are
+pending, the loop ends, and the run validates (FAIL, unapproved) and commits. The approver
+answers later with `compose clarity answer`, and the next `compose clarity` applies the
+approval and validates again.
+
+### The questions file
+
+`.clarity/questions.yml`, in the clarity worktree, is how the unattended phases talk to
+people. Skills write the questions; compose writes only `answer`, `answered_by` and
+`answered_at`. It's a companion file: created from a template, never validated, and not part
+of the fingerprint.
+
+```yaml
+questions:
+  - id: Q-007                      # stable, never reused
+    round: 2                       # the draft/apply pass that raised it
+    kind: gap                      # setup | gap | conflict | review | approval
+    document: product/prd.md       # null for setup questions
+    question: "The PRD says 3 user roles; the code has 2. Which is right?"
+    options: ["3 roles (PRD)", "2 roles (code)"]   # may be empty: free text
+    recommended: "3 roles (PRD)"   # may be null
+    free_text: true                # false: the answer must be one of the options
+    approver: null                 # approval questions only: who must answer
+    answer: null
+    answered_by: null
+    answered_at: null              # ISO date-time
+```
+
+- A question is **pending** while `answer` is null and it isn't marked `obsolete: true`.
+- **Rounds carry over**: a new pass numbers its round after the highest in the file. `draft`
+  keeps older pending questions that still apply and marks the rest obsolete, so the
+  questions of an auto run are asked by the next mixed run.
+- **Answers are checked**: with `free_text: false` the answer must be one of `options`.
+  Setup, gap, conflict and review questions are free text. Approval questions take `approve`
+  or `reject`, and only from their `approver`. A batch of answers is recorded all or nothing.
+- The skills may add their own keys (`applied`, `hashes`); compose keeps them.
+
+### Answering
+
+Answers are repo-level: they're written into the questions file whether or not a run is
+waiting. When a clarity run is paused on questions and nothing it asked is pending any more
+(approvals aside), recording the answer resumes it. Otherwise the next `compose clarity` run
+applies the answers.
+
+- **CLI:**
+
+  ```bash
+  compose clarity questions                       # id, kind, document, options, recommendation
+  compose clarity answer Q-007 "3 roles (PRD)"    # --by defaults to your git user name
+  compose clarity answer Q-012 approve --by "Ana Silva"
+  ```
+
+  `--no-resume` records without resuming; `-d` resumes in the background.
+- **API:** `GET /repos/{repo}/clarity/questions`, then
+  `POST /repos/{repo}/clarity/answers` with `{"answers": {"Q-007": "3 roles (PRD)"}, "by":
+  "Rui"}`. A paused run also lists what it waits for under `waiting.questions` in
+  `GET /runs/{run}`. See [api.md](api.md).
+- **Claude Code:** `/clarity` (or `/clarity mixed`) in your own checkout drafts, asks the
+  pending questions in the conversation, records the answers in the file, and applies them,
+  until nothing is pending.
+
+### The clarity branch
+
+Clarity runs work in a dedicated worktree, `~/.compose/worktrees/<repo>/clarity`, on a branch
+named `clarity` (config `clarity.branch` in `~/.compose/config.yml`), created from the default
+branch the first time.
+
+- **Before a run**, compose merges the default branch into `clarity`. A conflict refuses the
+  run, naming the files, and leaves the branch untouched.
+- **Commits.** Whenever a clarity or clarity-validate run pauses, completes, fails or is
+  aborted after changing `.clarity/` or the constitution, compose commits those paths only, on
+  the clarity branch, as `clarity: <mode> run <run id>`. It never commits anything else.
+- **Auto-merge on PASS.** When a run records PASS, compose fast-forwards the local default
+  branch to `clarity`. If the default branch moved during the run, it's merged into `clarity`
+  first; a conflict, or a PASS that no longer holds on the merged content, merges nothing.
+  When the default branch is checked out (usually your own checkout), compose fast-forwards it
+  there, but only if that checkout has no uncommitted changes under `.clarity/` or
+  `.compose/memory/`. Otherwise the run reports **PASS — merge pending** with the reason.
+- **`compose clarity merge`** (`POST /repos/{repo}/clarity/merge`) retries the merge with the
+  same rules, once you've cleaned up. It exits 1 (409) while the merge is still pending.
+- **No push.** Push the default branch yourself when ready.
+
+Builds branch from the default branch, so they only ever see a foundation that passed.
+
+### Verdict and fingerprint
+
+- The **clarity fingerprint** is a hash over the files under `.clarity/`, leaving out
+  `verdict.yml`, `questions.yml`, `failures/brainstorm/` and `prototypes/`. It's the same for
+  a branch and a worktree with the same content.
+- After `/clarity-validate`, compose reads its last line (`CLARITY: PASS` or
+  `CLARITY: FAIL (<n> incomplete)`; anything else counts as FAIL) and records
+  `.clarity/verdict.yml`: `{result, incomplete, fingerprint, run_id, at}`. A verdict is
+  **current** while its fingerprint matches the documents.
+- `compose clarity validate` (`POST /repos/{repo}/clarity/validate`) runs `/clarity-validate`
+  as a tracked run, records the verdict and, on PASS, regenerates the constitution if it's out
+  of date, commits and merges. It exits 1 on FAIL.
+- `compose clarity status` shows all of it without a model call: each document's status, the
+  verdict and whether it's current, the pending questions, whether the constitution is
+  current, the active run, and whether `compose build` would start.
+
+### The generated constitution
+
+In a clarity repo, `.compose/memory/constitution.md` is generated, not written by hand.
+`/compose-constitution from-clarity` derives its principles from the clarity documents
+(following `.compose/templates/compose/clarity.md`), each citing its source (`[STD-002]`).
+compose stamps its first line with the fingerprint it was generated from:
 
 ```text
-/clarity                                  # start from a conversation
+<!-- generated-from-clarity: <fingerprint> -->
+```
+
+The next clarity run overwrites a hand-edited constitution; the file's header says so.
+
+## compose build
+
+```bash
+compose build "Wishlist for signed-in users" [--workflow id] [-i k=v ...] [--feature NNN-name] [-d]
+```
+
+`compose build` (`POST /repos/{repo}/builds`) runs the default workflow (`defaults.workflow`,
+`automated` unless you change it) on a new feature, with the description as its spec. First
+comes the **pre-run check**, which `compose run` and `POST /repos/{repo}/runs` also apply to
+every feature run. It reads the **local default branch**, the one feature worktrees branch
+from, not your checkout. A repo has **started clarity** when its default branch has
+`.clarity/`, or a `clarity` branch exists.
+
+| Situation | Result |
+|---|---|
+| Clarity not started | Starts, with a warning: building on a guessed constitution. Run `compose clarity` for a confirmed foundation |
+| Started, `.clarity/` not on the default branch | Refuses: clarity is in progress on branch `clarity`. Fix: `compose clarity`; or, when the branch has a current PASS that wasn't merged, `compose clarity merge` |
+| No verdict, FAIL, or a verdict for other content than the default branch's | Refuses: the foundation doesn't pass (or changed since it was validated). Fix: `compose clarity validate` |
+| The constitution's stamp isn't the default branch's fingerprint | Refuses: the constitution is out of date with clarity. Fix: `compose clarity validate` |
+| All current and PASS | Starts |
+
+A refusal happens before any run exists: exit 1 on the CLI, 409 from the API with
+`problems: [{message, fix}]`. When the local default branch is behind its upstream (as far as
+git already knows), the message says to pull first: clarity merged on the remote reaches
+builds only after a pull. Warnings go to stderr on the CLI, and under `warnings` in JSON and
+API responses.
+
+**Without clarity**, builds work as before: the warning says the foundation is a guessed
+constitution, and if the default branch has none, the workflow's constitution step creates one
+unattended.
+
+## The clarity skills by hand
+
+```text
+/clarity                                  # mixed: draft, ask what's open here, apply
 /clarity docs/prd.md docs/rfc.md          # or from documents you already have
 /clarity https://github.com/org/repo/issues/12 mandatory: PRD, API, setup guide only
+/clarity docs/ interactive                # the stage-by-stage conversation
 /clarity docs/ auto                       # draft everything unattended, confirm later
 /clarity-validate                         # check; last line is CLARITY: PASS or FAIL
 /clarity-approve product/prd.md           # an approver signs off
 ```
 
 `/clarity` is the only command you need. It calls the other skills itself, in order. You can
-also run any of them on its own to rework one document.
+also run any of them on its own to rework one document. Run by hand in your own checkout,
+nothing is tracked or committed: you commit yourself, and the [pre-run check](#compose-build)
+then reads what you merged into the default branch.
 
 ## The flow
+
+This is the whole process, as `/clarity interactive` walks through it with you. `draft` and
+`apply` run the same steps unattended, raising questions instead of asking them.
 
 | Step | What happens |
 |---|---|

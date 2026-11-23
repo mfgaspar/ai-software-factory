@@ -51,6 +51,7 @@ workflow:
   limits:
     max_cost_usd: 25           # cap for the whole run
   tracking: true               # built-in tracking hooks (default true)
+  scope: feature               # feature (default) or repo, see below
 requires:
   compose_version: ">=0.1"     # informational
   engines: [claude]
@@ -84,6 +85,19 @@ steps:
 ```
 
 Unknown keys anywhere are errors, so typos are caught by `compose workflow validate`.
+
+### Scope
+
+`workflow.scope` says where a run works:
+
+- **`feature`** (the default): each run works on a feature, with its own numbered branch and
+  worktree, and passes the [clarity pre-run check](clarity.md#compose-build) first.
+- **`repo`**: the run works on the repo as a whole, in the clarity worktree
+  (`~/.compose/worktrees/<repo>/clarity`, on the `clarity` branch). It has no feature
+  (`--feature` is refused, `context.feature` is null, `COMPOSE_FEATURE` is unset and
+  `COMPOSE_SCOPE=repo`), skips the pre-run check, and only one repo-scoped run per repo can be
+  running or paused at a time. The built-in `clarity` and `clarity-validate` workflows are
+  repo-scoped.
 
 ## Inputs
 
@@ -203,6 +217,31 @@ A choice that isn't one of `options` is rejected and the gate stays paused. Choo
 
 Any other choice completes the gate with `output.choice` set and the run continues.
 
+#### `questions` — wait for answers in a questions file
+
+```yaml
+- id: questions
+  type: questions
+  file: .clarity/questions.yml   # relative to the run's working directory; may use {{ }}
+  ask: true                      # default; false only counts
+  holding_kinds: [setup, gap, conflict, review]   # default: every kind but approval
+```
+
+The file has the format of [the clarity questions file](clarity.md#the-questions-file). The step
+looks at its pending questions:
+
+- None pending, or `ask: false`: it completes and reports the counts.
+- In the foreground on a terminal: it asks each pending question (Enter takes the
+  recommendation), records the answers with `answered_by` set to the git user name, and
+  completes. An approval is asked only when the git user is its approver.
+- Otherwise, while a question of a holding kind is pending, the run **pauses** here. The
+  run's `waiting.questions` lists what it waits for. Answer with `compose clarity answer` or
+  `POST /repos/{repo}/clarity/answers` (both write into the file and resume the run once
+  nothing it asked is pending), or edit the file and `compose resume <run>`. On resume, the
+  step pauses again if any are still pending; answers already given are kept.
+
+A malformed file fails the step with the parse error; fix it and resume.
+
 #### `if` — branch
 
 ```yaml
@@ -295,6 +334,10 @@ The child runs in the same feature and worktree as a linked child run. Its decla
 `outputs` become this step's output. Calls nest up to 16 deep; a workflow cannot call
 itself directly or through others.
 
+`type: clarity` steps (recording the verdict, stamping the constitution, committing on the
+clarity branch and merging) are compose's own bookkeeping, internal to the built-in clarity
+workflows. A workflow outside compose that uses one is rejected.
+
 ### Step outputs
 
 | Step type | `steps.<id>.output` |
@@ -308,6 +351,7 @@ itself directly or through others.
 | `fan-out` | `results` (one output per item, in item order), `count` |
 | `fan-in` | the evaluated `output` mapping |
 | `workflow` | the child's declared outputs, plus `run_id` |
+| `questions` | `answered` (answers recorded in this step), `pending`, `holding` (pending questions of a holding kind) |
 
 Every step also exposes its tracking values (see [Tracking](#tracking)):
 
@@ -324,10 +368,20 @@ Every step also exposes its tracking values (see [Tracking](#tracking)):
 |---|---|
 | `context.run_id` | this run's id |
 | `context.workflow_dir` | folder of the workflow definition |
-| `context.worktree` | the feature worktree the run works in |
-| `context.repo.id`, `context.repo.name` | the repo |
-| `context.feature.id`, `.name`, `.branch`, `.dir` | the feature; `dir` is `specs/<name>` relative to the worktree root |
+| `context.worktree` | the worktree the run works in (the feature's, or the clarity worktree) |
+| `context.repo.id`, `context.repo.name`, `context.repo.dir` | the repo; `dir` is the run's working directory |
+| `context.feature.id`, `.name`, `.branch`, `.dir` | the feature; `dir` is `specs/<name>` relative to the worktree root. Null in a repo-scoped run |
 | `context.constitution_exists` | whether `.compose/memory/constitution.md` exists |
+
+Shell steps, hooks and engine steps also get these environment variables:
+
+| Variable | Value |
+|---|---|
+| `COMPOSE_RUN_ID` | this run's id |
+| `COMPOSE_REPO` | the repo's name |
+| `COMPOSE_SCOPE` | `feature` or `repo` (the workflow's `scope`) |
+| `COMPOSE_FEATURE` | the feature's name; unset in a repo-scoped run |
+| `COMPOSE_WORKFLOW_DIR` | folder of the workflow definition |
 
 ## Hooks
 
@@ -518,7 +572,7 @@ Run states: `created → running → completed | paused | failed | aborted`.
 - A step fails when its engine reports an error, a shell command exits non-zero, a limit
   or timeout is reached, or a required hook fails. The run then fails, unless the step has
   `continue_on_error: true`.
-- A run pauses at a gate with no answer. `compose resume <run>` (optionally with
+- A run pauses at a gate with no answer, or at a `questions` step with pending questions. `compose resume <run>` (optionally with
   `-i name=value`) continues a `paused` or `failed` run: steps that completed are not run
   again; the failed or paused step starts over. `--choice <option>` answers the gate
   that is waiting, even one inside a called workflow.
@@ -534,7 +588,13 @@ Run states: `created → running → completed | paused | failed | aborted`.
 | `automated` (default) | constitution (if missing or `with_constitution`) → specify → clarify + clarify review gate (unless `skip_clarify`) → plan → find skills + install gate (if `with_skills`) → checklist (if `with_checklist`) → tasks → analyze → implement → converge | `spec`, `feature_name`, `with_constitution`, `with_skills`, `review_skills_verdict`, `with_checklist`, `checklist_topic`, `skip_clarify`, `review_clarify_verdict`, `reasoning`, `plan`, `code`, `allowed_tools` |
 | `quick` | specify → plan → tasks → implement → converge, no gates | `spec`, `feature_name`, `converge`, `allowed_tools` |
 | `full-cycle` | constitution (if missing) → specify → clarify (if `clarify`) → spec review gate → plan → plan review gate → tasks → analyze → implement → converge | `spec`, `feature_name`, `clarify`, `review_spec_verdict`, `review_plan_verdict`, `converge`, `allowed_tools` |
+| `clarity` (repo-scoped) | draft → (questions → apply), while non-approval questions are pending, at most 4 rounds, mixed only → constitution from clarity → validate → record verdict, commit, merge on PASS | `sources`, `mode` (`mixed` or `auto`) |
+| `clarity-validate` (repo-scoped) | validate → record verdict → constitution (on PASS, if out of date) → commit, merge on PASS | none |
 | `bugfix` | bug assess → assessment review gate → (bug fix → test) until the tests pass, at most 3 times → bug test (verify) | `report`, `test_command`, `feature_name`, `review_assessment_verdict`, `allowed_tools` |
+
+Start the clarity workflows with `compose clarity` and `compose clarity validate` (see
+[Clarity and build](clarity.md)); `compose run clarity` works too. `compose build` starts
+`defaults.workflow` with the description as its first required string input.
 
 In a background run, implement (and bugfix's fix step) can only run the commands you allow:
 pass them as `-i allowed_tools="Bash(npm test),Bash(npm run lint)"`. Rejecting a review
@@ -609,9 +669,11 @@ resumable through it, and the other way round.
 | `GET/POST /repos`, `GET/DELETE /repos/{repo}` | list, add (`path` or `url`), show, remove |
 | `GET /repos/{repo}/workflows[/{id}]` | workflows, or one with its effective hooks |
 | `GET /repos/{repo}/features[/{feature}]` | features, or one with its files, runs and totals |
-| `POST /repos/{repo}/runs` | `{workflow, feature?, inputs}`: start a run (202; 409 if the feature is busy) |
+| `POST /repos/{repo}/runs` | `{workflow, feature?, inputs}`: start a run (202 with `warnings`; 409 if the feature is busy or the pre-run check refuses, with `problems`) |
+| `POST /repos/{repo}/builds` | `{spec, workflow?, feature?, inputs?}`: as `compose build` |
+| `POST/GET /repos/{repo}/clarity`, `…/clarity/questions`, `…/clarity/answers`, `…/clarity/validate`, `…/clarity/merge` | as `compose clarity …`; see [api.md](api.md#clarity-and-build) |
 | `GET /runs?repo=&feature=&status=&since=&limit=` | root runs, newest first |
-| `GET /runs/{run}` | status, waiting gate, every step, totals |
+| `GET /runs/{run}` | status, waiting gate (with `waiting.questions` at a questions step), every step, totals |
 | `GET /runs/{run}/steps/{exec_id}` | one step execution with hooks, files and actions |
 | `GET /runs/{run}/trace?step=`, `GET /runs/{run}/changes?step=` | as `compose trace` / `changes` |
 | `GET /runs/{run}/events?after=&limit=` | the event log, paged by `seq` |

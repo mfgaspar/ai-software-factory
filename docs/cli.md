@@ -66,18 +66,40 @@ compose abort <run>
   3 paused at a gate.
 - A run whose process died is marked failed the next time compose looks, and can be
   resumed. Only one run at a time per feature.
+- Feature runs go through the clarity pre-run check first: a repo that started clarity
+  needs a current PASS on its default branch (see [Clarity and build](clarity.md#compose-build)).
+  Repo-scoped workflows (`clarity`, `clarity-validate`) run on the clarity branch instead
+  and take no `--feature`.
 
 ## Clarity and build
 
+The two steps of the factory: settle the foundation with `compose clarity`, then build
+features on it with `compose build`. See [Clarity and build](clarity.md).
+
+```bash
+compose clarity [SOURCES...] [--mode mixed|auto|interactive] [--repo r] [-d]
+                [--interactive/--no-interactive] [-v]
+compose clarity status [--repo r]
+compose clarity questions [--repo r]
+compose clarity answer ID ANSWER [--by NAME] [--no-resume] [--repo r] [-d] [-v]
+compose clarity validate [--repo r] [-d] [-v]
+compose clarity merge [--repo r]
+compose build DESCRIPTION [--workflow id] [-i name=value ...] [--feature NNN-name] [--repo r]
+              [-d] [--interactive/--no-interactive] [-v]
+```
+
 | command | what it does |
 |---|---|
-| `compose clarity [SOURCES…] [--mode mixed\|auto\|interactive] [-d] [--json]` | start a clarity run on the `clarity` branch (mixed by default). A source named like a subcommand needs `./` |
-| `compose clarity status [--json]` | each document's status, the verdict and whether it's current, open questions, constitution currency, and whether `compose build` would start (no model call) |
-| `compose clarity questions [--json]` | the pending questions |
-| `compose clarity answer ID ANSWER [--by NAME] [--no-resume] [-d]` | record an answer; resumes the paused clarity run once nothing it asked is pending |
-| `compose clarity validate [-d] [--json]` | run `/clarity-validate` as a tracked run; exits 1 on FAIL |
-| `compose clarity merge [--json]` | retry merging a passing `clarity` branch into the default branch; exits 1 while pending |
-| `compose build DESCRIPTION [--workflow id] [-i k=v…] [--feature NNN-name] [-d] [--json]` | run the default workflow with DESCRIPTION as its spec, after the pre-run check; warnings go to stderr and under `warnings` in the JSON |
+| `compose clarity [SOURCES…]` | start a clarity run on the `clarity` branch, from the given paths or URLs. `--mode` is `mixed` (default: draft, then ask and apply up to 4 rounds), `auto` (draft only, never asks) or `interactive` (Claude Code attached to this terminal, then a tracked validate). On a terminal a mixed run asks its questions there; with `-d` or `--no-interactive` it pauses for answers. A source named like a subcommand needs `./` (`compose clarity ./status`); `compose clarity start --help` lists the options |
+| `compose clarity status` | each document's status, the verdict and whether it's current, the pending questions, whether the constitution is current, the active clarity run, and whether `compose build` would start. No model call |
+| `compose clarity questions` | the pending questions in the order they're asked: id, kind, document, question, options (with the approver) and recommendation |
+| `compose clarity answer ID ANSWER` | record an answer in the questions file. `--by` defaults to the git user name (an approval needs its approver). Resumes the paused clarity run once nothing it asked is pending, unless `--no-resume`; `-d` resumes it in the background |
+| `compose clarity validate` | run `/clarity-validate` as a tracked run: records the verdict; on PASS regenerates an out-of-date constitution, commits and merges. Exits 1 on FAIL |
+| `compose clarity merge` | retry merging a passing `clarity` branch into the default branch. Exits 1 while the merge is pending, with the reason |
+| `compose build DESCRIPTION` | run the default workflow (or `--workflow`) on a new feature (or `--feature`) with DESCRIPTION as its spec, after the pre-run check. A refusal exits 1 with each problem and its fix; warnings go to stderr and under `warnings` in the JSON. `-i` sets other inputs, as in `compose run` |
+
+Every one takes `--json`. Exit codes of runs started here are those of `compose run` (0
+completed or detached, 1 failed or aborted, 3 paused).
 
 ## Reports
 
@@ -115,7 +137,9 @@ See [api.md](api.md). Set `server.token` in `~/.compose/config.yml` (or
 defaults:
   engine: claude
   model: claude-sonnet-5-5   # used when a workflow or step names none
-  workflow: automated        # what compose run starts when no workflow is named
+  workflow: automated        # what compose run and compose build start when none is named
+clarity:
+  branch: clarity            # the branch (and worktree) clarity runs work on
 server:
   host: 127.0.0.1
   port: 8765
@@ -125,5 +149,6 @@ engines:                     # default engine_options per engine
     transport: cli           # cli (claude -p, stream-json) or sdk (Claude Agent SDK)
 ```
 
-Inside a run, steps and hooks see `COMPOSE_RUN_ID`, `COMPOSE_FEATURE`, `COMPOSE_REPO` and
+Inside a run, steps and hooks see `COMPOSE_RUN_ID`, `COMPOSE_REPO`, `COMPOSE_SCOPE`
+(`feature`, or `repo` for clarity runs), `COMPOSE_FEATURE` (feature runs only) and
 `COMPOSE_WORKFLOW_DIR`.

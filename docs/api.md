@@ -23,8 +23,25 @@ Errors are JSON `{"detail": "..."}`:
 |---|---|
 | 401 | missing or wrong token |
 | 404 | unknown repo, workflow, feature, run or step |
-| 409 | the feature already has an active run; the run is in the wrong state (e.g. resuming a completed run, answering a gate it is not waiting at); the pre-run check refused a feature run (the body adds `problems: [{message, fix}]`) |
-| 422 | missing or invalid inputs, an invalid workflow, an unknown engine, a bad query value |
+| 409 | the feature already has an active run; the repo already has an active clarity run; the run is in the wrong state (e.g. resuming a completed run, answering a gate it is not waiting at); the pre-run check refused a feature run (see below); a clarity merge is still pending |
+| 422 | missing or invalid inputs, an invalid workflow, an unknown engine, a bad query value, an invalid clarity answer, `mode: interactive` |
+
+When the [pre-run check](clarity.md#compose-build) refuses a feature run (`POST
+/repos/{repo}/runs` or `/builds`), the 409 body lists each problem with its fix:
+
+```json
+{
+  "detail": "The clarity foundation doesn't pass (or changed since it was validated). Fix: compose clarity validate",
+  "problems": [
+    {"message": "The clarity foundation doesn't pass (or changed since it was validated).",
+     "fix": "compose clarity validate"}
+  ]
+}
+```
+
+A run that starts returns 202 with the run brief plus `run_id` and `warnings`: the pre-run
+check's warnings (for example "No clarity foundation: building on a guessed constitution…"),
+empty when there are none and always empty for clarity runs.
 
 ## Routes
 
@@ -40,7 +57,7 @@ Errors are JSON `{"detail": "..."}`:
 | `GET /repos/{repo}/features/{feature}` | paths, which spec files exist, worktree, runs, totals |
 | `POST /repos/{repo}/runs` | `{workflow, feature?, inputs}`: start a run (202, with the pre-run check's `warnings`) |
 | `GET /runs?repo=&feature=&status=&since=&limit=` | root runs, newest first, with cost |
-| `GET /runs/{run}` | status, current step, waiting gate (with `waiting.questions` at a questions step), every step, totals |
+| `GET /runs/{run}` | status, current step, `waiting` (the gate or questions step it's paused at; at a questions step, `waiting.questions` lists the pending questions it waits for), every step, totals, `worktree` (the clarity worktree for repo-scoped runs) |
 | `GET /runs/{run}/steps/{exec_id}` | one step execution: totals, hooks, files, actions |
 | `GET /runs/{run}/trace?step=` | actions per step, hooks nested |
 | `GET /runs/{run}/changes?step=` | files and lines per step |
@@ -49,16 +66,79 @@ Errors are JSON `{"detail": "..."}`:
 | `POST /runs/{run}/resume` | `{inputs?, choice?}`: continue a paused or failed run (202) |
 | `POST /runs/{run}/gates/{step}` | `{choice}`: answer the waiting gate and resume (202) |
 | `POST /runs/{run}/abort` | abort |
-| `POST /repos/{repo}/builds` | `{spec, workflow?, feature?, inputs?}`: the default workflow with `spec` as its description, after the pre-run check (202 with `warnings`; 409 with `problems` when refused) |
-| `POST /repos/{repo}/clarity` | `{sources?, mode?: mixed\|auto}`: start a clarity run (202); `interactive` gives 422 |
-| `GET /repos/{repo}/clarity` | the same as `compose clarity status --json` |
-| `GET /repos/{repo}/clarity/questions` | the pending questions |
-| `POST /repos/{repo}/clarity/answers` | `{answers: {id: answer}, by, resume?}`: record answers, all or nothing (422 on any invalid one); resumes the paused clarity run when nothing it asked is pending. `{recorded, resumed_run}` |
-| `POST /repos/{repo}/clarity/validate` | start a `clarity-validate` run (202) |
-| `POST /repos/{repo}/clarity/merge` | retry merging a passing clarity branch: `{merged: true}`, or 409 with `pending_reason` |
 | `GET /costs?repo=&feature=&run=&group_by=&from=&to=` | totals grouped by `step`, `run`, `feature`, `repo` or `day` |
 
 Response bodies have the same shape as the matching CLI command's `--json` output.
+
+## Clarity and build
+
+The two steps of [Clarity and build](clarity.md), over HTTP. Interactive clarity needs a
+person in a Claude Code session, so the API offers `mixed` and `auto` only.
+
+| method and path | body | response |
+|---|---|---|
+| `POST /repos/{repo}/clarity` | `{sources?: [str], mode?: "mixed" \| "auto"}` (default `mixed`) | 202, the run brief with `run_id` and `warnings`. 409 while another clarity run is running or paused; 422 for `interactive` |
+| `GET /repos/{repo}/clarity` | — | the clarity status, as `compose clarity status --json` (below). No model call |
+| `GET /repos/{repo}/clarity/questions` | — | the pending questions, in the order they're asked: a list of question objects (the fields of [the questions file](clarity.md#the-questions-file)) |
+| `POST /repos/{repo}/clarity/answers` | `{answers: {id: answer}, by: str, resume?: bool = true}` | `{recorded: [id], resumed_run: id \| null}`. All or nothing: any invalid answer (unknown or answered question, not one of the options, an approval from someone other than its approver) gives 422 and records nothing. With `resume`, the paused clarity run is resumed when nothing it asked is still pending (approvals aside) |
+| `POST /repos/{repo}/clarity/validate` | — | 202, the brief of a `clarity-validate` run |
+| `POST /repos/{repo}/clarity/merge` | — | `{merged: true}`, or 409 `{detail, merged: false, pending_reason}` |
+| `POST /repos/{repo}/builds` | `{spec: str, workflow?, feature?, inputs?}` | 202, the run brief with `run_id` and `warnings`; 409 with `problems` when the pre-run check refuses. `spec` fills the workflow's first required string input (`spec` for the built-ins); don't also put it in `inputs` |
+
+`GET /repos/{repo}/clarity`:
+
+```json
+{
+  "repo": "shop",
+  "started": true,
+  "branch": "clarity",
+  "worktree": "/home/me/.compose/worktrees/shop/clarity",
+  "documents": {"goal/problem.md": "complete", "product/prd.md": "draft"},
+  "fingerprint": "3f9c…",
+  "verdict": {"result": "FAIL", "incomplete": 1, "fingerprint": "3f9c…",
+              "run_id": "run_…", "at": "2026-11-23T10:00:00+00:00", "current": true},
+  "questions": {"pending": 2, "holding": 1, "ids": ["Q-007", "Q-012"]},
+  "constitution": {"fingerprint": "3f9c…", "current": true},
+  "active_run": {"id": "run_…", "status": "paused", "...": "..."},
+  "build": {"ok": false, "warnings": [],
+            "problems": [{"message": "Clarity is in progress on branch `clarity` and hasn't passed yet.",
+                          "fix": "compose clarity"}]}
+}
+```
+
+`questions.holding` counts the pending questions that hold a run (all but approvals).
+Before clarity starts, `started` is false, `documents` is empty and `verdict` null.
+
+A paused clarity run shows what it waits for:
+
+```json
+{"status": "paused",
+ "waiting": {"step_id": "questions", "questions": [
+   {"id": "Q-007", "kind": "gap", "document": "product/prd.md",
+    "question": "The PRD says 3 user roles; the code has 2. Which is right?",
+    "options": ["3 roles (PRD)", "2 roles (code)"], "recommended": "3 roles (PRD)",
+    "free_text": true, "approver": null, "answer": null, "...": "..."}]}}
+```
+
+### Example: clarity, then a build
+
+```bash
+API=http://127.0.0.1:8765
+RUN=$(curl -s -X POST $API/repos/shop/clarity -H 'content-type: application/json' \
+  -d '{"sources": ["docs/"]}' | jq -r .run_id)
+
+curl -s $API/runs/$RUN | jq '.status, [.waiting.questions[]? | {id, question, recommended}]'
+
+curl -s -X POST $API/repos/shop/clarity/answers -H 'content-type: application/json' \
+  -d '{"answers": {"Q-001": "confirm", "Q-002": "3 roles (PRD)"}, "by": "Rui Costa"}'
+# {"recorded": ["Q-001", "Q-002"], "resumed_run": "run_…"}
+
+# … repeat until the run completes; then:
+curl -s $API/repos/shop/clarity | jq '.verdict.result, .build'
+
+curl -s -X POST $API/repos/shop/builds -H 'content-type: application/json' \
+  -d '{"spec": "Wishlist for signed-in users"}' | jq '{run_id, warnings}'
+```
 
 ## Example: a run with a review gate
 
