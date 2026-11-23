@@ -9,11 +9,16 @@ or by hand inside Claude Code with the same skills.
 
 - **Skills** for Claude Code: `/compose-specify`, `/compose-clarify`, `/compose-plan`,
   `/compose-tasks`, `/compose-analyze`, `/compose-checklist`, `/compose-implement`,
-  `/compose-converge`, `/compose-find-skills` (search and install other agent skills, with
+  `/compose-converge`, `/compose-bug-assess`, `/compose-bug-fix`, `/compose-bug-test`,
+  `/compose-find-skills` (search and install other agent skills, with
   `npx skills`; adapted from vercel-labs/skills, MIT),
   `/compose-constitution`, and `/compose`, which operates compose itself.
+- **Clarity skills**, a separate family for thinking a project through before building it:
+  `/clarity` writes and validates a project's problem, requirements, solution, failure
+  analysis, architecture, ADRs, PRD, UX flows, API contracts, data model and setup guide in
+  `.clarity/` (adapted from microsoft/clarity-agent, MIT). See [Clarity skills](docs/clarity.md).
 - **Workflows** chain those skills with shell steps, review gates, loops, branches and
-  hooks. Four are built in (`pipeline`, the default, plus `quick`, `full-cycle`, `bugfix`) and you can write your own.
+  hooks. Four are built in (`automated`, the default, plus `quick`, `full-cycle`, `bugfix`) and you can write your own.
 - **Traceability:** every message, tool call and result per step, with hooks nested.
 - **Cost and change tracking** per step, run, feature, repo or day, hooks included.
 - **One worktree and branch per feature**; runs on different features run in parallel.
@@ -26,6 +31,23 @@ You need Python 3.11+, [uv](https://docs.astral.sh/uv/), git, and Claude Code si
 (`claude -p --output-format stream-json`), or the copy bundled with the Claude Agent SDK
 when there is none. To drive Claude Code through the SDK instead, set
 `engines.claude.transport: sdk` in `~/.compose/config.yml`.
+
+From a checkout, the install scripts set everything up: they check git, install
+[uv](https://docs.astral.sh/uv/) if it is missing (asking first; `--yes`/`-Yes` skips
+the question), install compose with the Python it needs, and run `compose check`.
+
+```bash
+./install.sh                                  # Linux and macOS
+./install.sh --source <path|git-url>          # install another checkout or a git URL
+```
+
+```powershell
+.\install.ps1                                 # Windows (PowerShell)
+.\install.ps1 -Source <path|git-url>
+```
+
+On Windows, install [Git for Windows](https://git-scm.com/download/win) first: workflow
+shell steps run under its `sh`. Or install by hand with uv:
 
 ```bash
 uv tool install /path/to/compose        # a local checkout
@@ -100,6 +122,20 @@ The skills work in Claude Code exactly as they do in a workflow, without trackin
 checkout. Or ask Claude Code to "run the quick compose workflow for …": the `compose`
 skill starts and follows runs for you, and leaves gate decisions to you.
 
+## Clarity skills
+
+Independent of the compose workflows, the clarity skills help you decide *what* to build and
+write it down. One command runs the whole process:
+
+```text
+/clarity docs/prd.md docs/notes.md      # learn from existing documents, then ask only about gaps
+/clarity-validate                       # ends with CLARITY: PASS or CLARITY: FAIL (n incomplete)
+```
+
+`/clarity` agrees with you which documents the project needs (`.clarity/config.yml`),
+drafts them from what you supplied and the code, works through them stage by stage, collects
+approvals last, and validates. It resumes where it left off. See [Clarity skills](docs/clarity.md).
+
 ## HTTP API
 
 ```bash
@@ -118,8 +154,11 @@ other's. Live progress streams as Server-Sent Events from `/runs/{id}/events?str
 - [HTTP API](docs/api.md)
 - [Writing workflows and hooks](docs/custom-workflows.md)
 - [Workflow reference](docs/workflow-reference.md): every field and behavior
+- [Clarity skills](docs/clarity.md): the document set, the flow, config, approvals, validation
 - [Design](docs/superpowers/specs/2026-11-21-compose-design.md) and
-  [implementation plan](docs/superpowers/plans/2026-11-21-compose-plan.md)
+  [implementation plan](docs/superpowers/plans/2026-11-21-compose-plan.md); clarity
+  [design](docs/superpowers/specs/2026-11-22-clarity-skills-design.md) and
+  [plan](docs/superpowers/plans/2026-11-22-clarity-skills-plan.md)
 
 ## Where things are kept
 

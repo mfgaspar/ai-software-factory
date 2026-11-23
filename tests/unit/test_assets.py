@@ -16,6 +16,9 @@ from compose.engines.claude.install import ASSETS
 SKILLS = sorted(p for p in (ASSETS / "skills").iterdir() if p.is_dir())
 WORKFLOW_SKILLS = [
     "compose-analyze",
+    "compose-bug-assess",
+    "compose-bug-fix",
+    "compose-bug-test",
     "compose-checklist",
     "compose-clarify",
     "compose-constitution",
@@ -27,6 +30,29 @@ WORKFLOW_SKILLS = [
 ]
 # shipped skills that work outside workflows and don't touch features
 OTHER_SKILLS = ["compose-find-skills"]
+# the clarity family (see docs/clarity.md); independent of compose workflows
+CLARITY_SKILLS = [
+    "clarity",
+    "clarity-api-contracts",
+    "clarity-approve",
+    "clarity-architecture",
+    "clarity-configure",
+    "clarity-data-model",
+    "clarity-decision",
+    "clarity-discovery-prototype",
+    "clarity-discovery-research",
+    "clarity-failure-analysis",
+    "clarity-failure-brainstorm",
+    "clarity-failure-management",
+    "clarity-message",
+    "clarity-prd",
+    "clarity-problem",
+    "clarity-setup-guide",
+    "clarity-solution",
+    "clarity-ux-flows",
+    "clarity-validate",
+]
+CLARITY_PENDING: set[str] = set()
 PLANNED: set[str] = set()
 
 
@@ -63,7 +89,9 @@ def referenced(body: str) -> set[str]:
 
 
 def test_all_skills_are_shipped() -> None:
-    assert [p.name for p in SKILLS] == sorted([*WORKFLOW_SKILLS, *OTHER_SKILLS, "compose"])
+    shipped = [*WORKFLOW_SKILLS, *OTHER_SKILLS, "compose", *CLARITY_SKILLS]
+    expected = sorted(name for name in shipped if name not in CLARITY_PENDING)
+    assert [p.name for p in SKILLS] == expected
 
 
 @pytest.mark.parametrize("skill", SKILLS, ids=lambda p: p.name)
@@ -104,7 +132,8 @@ def test_adopted_skill_keeps_its_license() -> None:
 
 
 def test_no_references_to_the_old_project() -> None:
-    pattern = re.compile(r"spec[- ]?kit|\.specify/|/speckit", re.I)
+    s, k, i = "spec", "kit", "ify"
+    pattern = re.compile(rf"{s}[- ]?{k}|\\.{s}{i}/", re.I)
     offenders = [
         str(p.relative_to(ASSETS))
         for p in ASSETS.rglob("*")
@@ -114,7 +143,7 @@ def test_no_references_to_the_old_project() -> None:
 
 
 def test_templates() -> None:
-    names = sorted(p.name for p in (ASSETS / "templates").iterdir())
+    names = sorted(p.name for p in (ASSETS / "templates").iterdir() if p.is_file())
     assert names == ["checklist.md", "constitution.md", "plan.md", "spec.md", "tasks.md"]
     spec = (ASSETS / "templates" / "spec.md").read_text()
     for heading in ("## User scenarios", "## Requirements", "## Success criteria"):

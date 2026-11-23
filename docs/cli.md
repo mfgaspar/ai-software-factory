@@ -103,7 +103,7 @@ See [api.md](api.md). Set `server.token` in `~/.compose/config.yml` (or
 defaults:
   engine: claude
   model: claude-sonnet-5-5   # used when a workflow or step names none
-  workflow: pipeline         # what compose run starts when no workflow is named
+  workflow: automated        # what compose run starts when no workflow is named
 server:
   host: 127.0.0.1
   port: 8765

@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import signal
 from contextlib import suppress
 from typing import TYPE_CHECKING
 
+from compose.core import procs
 from compose.core.models import StepExec
 from compose.runner.context import Scope
 from compose.runner.steps.base import Outcome
@@ -25,19 +25,18 @@ def _truncate(data: bytes, limit: int) -> str:
 
 async def run_shell(rc: RunContext, command: str, env: dict[str, str]) -> tuple[int, bytes, bytes]:
     """Run ``command`` in the worktree; kill its process group if cancelled."""
-    proc = await asyncio.create_subprocess_shell(
+    proc = await procs.start_shell(
         command,
         cwd=rc.worktree,
         env={**os.environ, **rc.env(), **env},
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        start_new_session=True,
+        **procs.group_kwargs(),
     )
     try:
         out, err = await proc.communicate()
     except BaseException:
-        with suppress(ProcessLookupError):
-            os.killpg(proc.pid, signal.SIGKILL)
+        procs.signal_tree(proc.pid, force=True)
         with suppress(Exception):
             await proc.wait()
         raise

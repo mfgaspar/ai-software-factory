@@ -247,8 +247,8 @@ committed versions.
 ## M8 — Skills, templates, init
 
 **T8.1 Templates and constitution.** `assets/templates/{spec,plan,tasks,checklist}.md`,
-`assets/memory/constitution.md` — adapted from spec-kit's, renamed to compose, no spec-kit
-references (a test greps assets for `speckit|spec-kit|specify`).
+`assets/memory/constitution.md` — adapted from the prior art's, renamed to compose, with no
+references to the old project (a test greps assets for its name).
 
 **T8.2 Skills.** `assets/skills/compose-{constitution,specify,clarify,plan,tasks,analyze,
 checklist,implement}/SKILL.md`: adapted prompts; all filesystem/feature logic goes through
@@ -329,4 +329,4 @@ M12. After M4, M3.4 docs, M7 (adapter) and M8.1/8.2 (assets) can proceed in para
 - For every step: status, actions, cost, files and lines changed, hooks included, visible via
   CLI and API, and totals add up across step → run → feature → repo.
 - Skills work by hand in Claude Code with identical behavior and no tracking.
-- No "speckit"/"spec-kit"/"specify" strings anywhere in the shipped package (test enforced).
+- No references to the old project's name anywhere in the shipped package (test enforced).

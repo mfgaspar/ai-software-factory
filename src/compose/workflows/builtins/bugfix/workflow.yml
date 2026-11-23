@@ -2,49 +2,56 @@ schema_version: "1.0"
 workflow:
   id: bugfix
   name: Bug fix
-  version: 1.1.0
-  description: Assess a bug report, then fix and test until the tests pass (up to 3 tries).
+  version: 2.0.0
+  description: >
+    Assess a bug report, review the assessment, then fix and test until the tests pass
+    (up to 3 tries), and verify the fix.
 inputs:
   report:
     type: string
     required: true
-    prompt: Describe the bug
+    prompt: Describe the bug (text or an issue URL)
   test_command:
     type: string
     required: true
     prompt: Command that runs the tests
   feature_name:
     type: string
-    description: Short name for a new feature (default derived from the report).
+    description: Short name for the bug's feature (default derived from the report).
+  review_assessment_verdict:
+    type: string
+    default: ""
+    description: Pre-answer the assessment review gate (approve or reject).
   allowed_tools:
     type: string
     default: ""
     description: >
-      Extra tools the fix step may use without asking, comma-separated
+      Extra tools the fix and verify steps may use without asking, comma-separated
       (e.g. "Bash(npm test)"). Tests always run in their own step regardless.
 steps:
   - id: assess
-    prompt: |
-      Investigate this bug report and write your assessment (symptoms, root cause,
-      proposed fix, how to verify) to {{ context.feature.dir }}/bug-assessment.md.
-      Do not change any code yet.
-
-      Bug report:
-      {{ inputs.report }}
+    command: compose-bug-assess
+    input:
+      args: "{{ inputs.report }}"
+  - id: review-assessment
+    type: gate
+    message: "Review {{ context.feature.dir }}/assessment.md before any code changes."
+    verdict_input: review_assessment_verdict
+    options: [approve, reject]
+    on_reject: abort
   - id: fix-loop
     type: do-while
     max_iterations: 3
     condition: "{{ steps.test.output.exit_code != 0 }}"
     steps:
       - id: fix
-        prompt: |
-          Fix the bug described in {{ context.feature.dir }}/bug-assessment.md.
-          Keep the change minimal and add or update a test that covers it.
-          The tests run with: {{ inputs.test_command }}
-
-          Output of the last test run, if any:
-          {{ steps.test.output.stdout | default("(not run yet)") }}
-          {{ steps.test.output.stderr | default("") }}
+        command: compose-bug-fix
+        input:
+          args: |
+            The tests run with: {{ inputs.test_command }}
+            Output of the last test run, if any:
+            {{ steps.test.output.stdout | default("(not run yet)") }}
+            {{ steps.test.output.stderr | default("") }}
         engine_options:
           allowed_tools: ["{{ inputs.allowed_tools | split(',') }}"]
       - id: test
@@ -55,8 +62,11 @@ steps:
         run: sh -c "$TEST_COMMAND"
         capture: true
         continue_on_error: true
-  - id: summary
-    prompt: |
-      Summarize the fix in {{ context.feature.dir }}/bug-fix-summary.md: what was wrong,
-      what changed, and the final test result (exit code
-      {{ steps.test.output.exit_code }}).
+  - id: verify
+    command: compose-bug-test
+    input:
+      args: >
+        The test command is {{ inputs.test_command }}; its last run in this workflow exited
+        with code {{ steps.test.output.exit_code }}.
+    engine_options:
+      allowed_tools: ["{{ inputs.allowed_tools | split(',') }}"]

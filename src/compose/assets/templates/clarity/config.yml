@@ -1,0 +1,37 @@
+# Clarity project config. This file belongs to the project: commit it, edit it, and it is
+# never overwritten by an install. It is applied on top of the shipped manifest
+# (.compose/templates/clarity/manifest.yml). /clarity-configure writes and updates it.
+#
+# Every key is optional; an empty file means "use the shipped defaults".
+
+# Make optional or custom documents required, or stop requiring shipped ones.
+# goal/problem.md and goal/requirements.md can never be removed.
+# mandatory:
+#   add: [ops/runbook.md]
+#   remove: [product/ux-flows.md]
+
+# Documents that don't apply to this project, decided up front, each with its reason.
+# not_applicable:
+#   data/data-model.md: "Stateless service, no persistence"
+
+# Project-specific documents. Each needs a template (put it under .clarity/templates/),
+# its required headings and what it depends on. produced_by: clarity means /clarity drafts
+# it itself; walk_after places it in the order.
+# documents:
+#   ops/runbook.md:
+#     template: .clarity/templates/runbook.md
+#     required_sections: [Alerts, Rollback]
+#     depends_on: [solution/architecture.md]
+#     produced_by: clarity
+#     walk_after: ops/setup-guide.md
+
+# Who must sign off which document. Names are recorded as typed (an honor system).
+# A glob covers several documents; decisions/* covers every ADR.
+# approvals:
+#   product/prd.md: [Ana Silva]
+#   solution/architecture.md: [Rui Costa]
+#   decisions/*: [Rui Costa]
+
+# true: a stale document (an upstream document changed since it was confirmed) fails
+# /clarity-validate. false (default): it is reported as a warning.
+# stale_fails: false

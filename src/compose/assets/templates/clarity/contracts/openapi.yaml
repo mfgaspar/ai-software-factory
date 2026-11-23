@@ -1,0 +1,6 @@
+openapi: 3.1.0
+info:
+  title: "[TBD]"
+  version: 0.1.0
+  description: "[To be determined. Replace with the real contract, or point contracts/api.md at an existing spec.]"
+paths: {}

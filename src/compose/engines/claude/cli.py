@@ -11,13 +11,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import signal
 from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import suppress
 
 from claude_agent_sdk import ClaudeAgentOptions
 
+from compose.core import procs
 from compose.engines.base import EngineEvent, EngineResult
 from compose.engines.claude import install as installer
 from compose.engines.claude.mapping import EventMapper
@@ -97,8 +97,8 @@ class ClaudeCliRun:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,  # stop() signals the whole process group
                 limit=LINE_LIMIT_BYTES,
+                **procs.group_kwargs(),  # stop() signals the whole process group
             )
         except OSError as exc:
             self._result = self.mapper.unfinished("failed", f"cannot start {self.argv[0]}: {exc}")
@@ -140,16 +140,8 @@ class ClaudeCliRun:
 
     async def _terminate(self) -> None:
         proc = self._proc
-        if proc is None or proc.returncode is not None:
-            return
-        for sig in (signal.SIGTERM, signal.SIGKILL):
-            with suppress(ProcessLookupError, PermissionError):
-                os.killpg(proc.pid, sig)
-            try:
-                await asyncio.wait_for(proc.wait(), STOP_TIMEOUT_SECONDS)
-                return
-            except TimeoutError:
-                continue
+        if proc is not None:
+            await procs.stop_tree(proc, STOP_TIMEOUT_SECONDS)
 
     async def _drain(self, stream: asyncio.StreamReader) -> None:
         async for raw in stream:

@@ -217,14 +217,14 @@ async def test_full_cycle_rejected_spec_aborts(builtin: Env) -> None:
     assert "compose-plan" not in called(builtin)
 
 
-async def test_pipeline_is_the_default_workflow(builtin: Env) -> None:
+async def test_automated_is_the_default_workflow(builtin: Env) -> None:
     created = builtin.runner().create_run(builtin.repo, None, {"spec": "Add a wishlist"})
-    assert created.workflow_id == "pipeline"
+    assert created.workflow_id == "automated"
 
 
-async def test_pipeline_pauses_at_clarify_then_runs_to_the_end(builtin: Env) -> None:
+async def test_automated_pauses_at_clarify_then_runs_to_the_end(builtin: Env) -> None:
     runner = builtin.runner()
-    run = await runner.start(builtin.repo, workflow("pipeline"), {"spec": "Export to CSV"})
+    run = await runner.start(builtin.repo, workflow("automated"), {"spec": "Export to CSV"})
     assert run.status is RunStatus.PAUSED and run.current_step_id == "clarify-gate"
     assert called(builtin) == ["compose-constitution", "compose-specify", "compose-clarify"]
 
@@ -242,7 +242,7 @@ async def test_pipeline_pauses_at_clarify_then_runs_to_the_end(builtin: Env) -> 
     assert {opts.model for _, _, opts in builtin.fake.calls} == {"default-model"}
 
 
-async def test_pipeline_options_models_and_convergence(builtin: Env) -> None:
+async def test_automated_options_models_and_convergence(builtin: Env) -> None:
     builtin.fake.scripts = converging(gaps=1)  # type: ignore[assignment]
     inputs = {
         "spec": "Add login",
@@ -254,7 +254,7 @@ async def test_pipeline_options_models_and_convergence(builtin: Env) -> None:
         "code": "claude-sonnet-5-5",
         "allowed_tools": "Bash(npm test)",
     }
-    run = await builtin.runner().start(builtin.repo, workflow("pipeline"), inputs)
+    run = await builtin.runner().start(builtin.repo, workflow("automated"), inputs)
     assert run.status is RunStatus.COMPLETED, run.error
     calls = [(task.text, task.args, opts.model) for task, _, opts in builtin.fake.calls]
     assert [(text, model) for text, _, model in calls] == [
@@ -276,9 +276,9 @@ async def test_pipeline_options_models_and_convergence(builtin: Env) -> None:
     assert claude.allowed_tools == [*ALWAYS_ALLOWED, "Bash(npm test)"]
 
 
-async def test_pipeline_rejected_clarify_aborts(builtin: Env) -> None:
+async def test_automated_rejected_clarify_aborts(builtin: Env) -> None:
     inputs = {"spec": "Risky idea", "review_clarify_verdict": "reject"}
-    run = await builtin.runner().start(builtin.repo, workflow("pipeline"), inputs)
+    run = await builtin.runner().start(builtin.repo, workflow("automated"), inputs)
     assert run.status is RunStatus.ABORTED
     assert "compose-plan" not in called(builtin)
 
@@ -287,15 +287,18 @@ def fixer(passes_on: int | None) -> object:
     attempts: list[str] = []
 
     def script(task: EngineTask, cwd: Path, options: EngineOptions) -> Script:
-        if task.text.startswith("Investigate"):
-            feature_dir = f"specs/{options.env['COMPOSE_FEATURE']}"
-            return Script(edit(f"{feature_dir}/bug-assessment.md", "root cause\n"))
-        if task.text.startswith("Fix the bug"):
-            attempts.append(task.text)
+        feature_dir = f"specs/{options.env['COMPOSE_FEATURE']}"
+        if task.text == "compose-bug-assess":
+            return Script(edit(f"{feature_dir}/assessment.md", "Verdict: valid\n"))
+        if task.text == "compose-bug-fix":
+            attempts.append(task.args or "")
             n = len(attempts)
             fixed = passes_on is not None and n >= passes_on
             return Script(edit("attempt.txt", f"{n}\n{'fixed' if fixed else 'broken'}\n"))
-        return Script(edit(f"specs/{options.env['COMPOSE_FEATURE']}/bug-fix-summary.md", "s\n"))
+        assert task.text == "compose-bug-test"
+        return Script(
+            [*edit(f"{feature_dir}/test.md", "Result: verified\n"), Act(say="RESULT: verified")]
+        )
 
     script.attempts = attempts  # type: ignore[attr-defined]
     return script
@@ -304,36 +307,61 @@ def fixer(passes_on: int | None) -> object:
 TEST_COMMAND = (
     "grep -q fixed attempt.txt || { echo FAILED attempt $(head -1 attempt.txt); exit 1; }"
 )
+BUG = {"report": "Crash on empty input", "test_command": TEST_COMMAND}
+
+
+async def test_bugfix_waits_for_the_assessment_review(builtin: Env) -> None:
+    builtin.fake.scripts = fixer(passes_on=1)  # type: ignore[assignment]
+    runner = builtin.runner()
+    run = await runner.start(builtin.repo, workflow("bugfix"), BUG)
+    assert run.status is RunStatus.PAUSED and run.current_step_id == "review-assessment"
+    assert called(builtin) == ["compose-bug-assess"]
+    assert builtin.fake.calls[0][0].args == "Crash on empty input"
+    feature = builtin.worktree(run) / "specs" / "001-crash-empty-input"
+    assert (feature / "assessment.md").exists()
+
+    run = await runner.resume(run.id, choice="approve")
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert called(builtin) == ["compose-bug-assess", "compose-bug-fix", "compose-bug-test"]
+    assert (feature / "test.md").exists()
+
+
+async def test_bugfix_rejected_assessment_changes_nothing(builtin: Env) -> None:
+    builtin.fake.scripts = fixer(passes_on=1)  # type: ignore[assignment]
+    inputs = {**BUG, "review_assessment_verdict": "reject"}
+    run = await builtin.runner().start(builtin.repo, workflow("bugfix"), inputs)
+    assert run.status is RunStatus.ABORTED
+    assert called(builtin) == ["compose-bug-assess"]
 
 
 async def test_bugfix_loops_until_tests_pass(builtin: Env) -> None:
     script = fixer(passes_on=2)
     builtin.fake.scripts = script  # type: ignore[assignment]
-    inputs = {"report": "Crash on empty input", "test_command": TEST_COMMAND}
+    inputs = {**BUG, "review_assessment_verdict": "approve"}
     run = await builtin.runner().start(builtin.repo, workflow("bugfix"), inputs)
     assert run.status is RunStatus.COMPLETED, run.error
 
     attempts = script.attempts  # type: ignore[attr-defined]
     assert len(attempts) == 2
-    assert "(not run yet)" in attempts[0]
+    assert "(not run yet)" in attempts[0] and TEST_COMMAND in attempts[0]
     assert "FAILED attempt 1" in attempts[1]
     tests = builtin.exec_of(run, "test")
     assert [(t.iteration, t.output and t.output["exit_code"]) for t in tests] == [(1, 1), (2, 0)]
-    summary_prompt = builtin.fake.calls[-1][0].text
-    assert "exit code\n0)" in summary_prompt or "exit code 0" in summary_prompt.replace("\n", " ")
+    verify = builtin.fake.calls[-1][0]
+    assert verify.text == "compose-bug-test" and "exited with code 0" in (verify.args or "")
 
 
 async def test_bugfix_gives_up_after_three_tries(builtin: Env) -> None:
     script = fixer(passes_on=None)
     builtin.fake.scripts = script  # type: ignore[assignment]
-    inputs = {"report": "Flaky clock", "test_command": TEST_COMMAND}
+    inputs = {**BUG, "review_assessment_verdict": "approve"}
     run = await builtin.runner().start(builtin.repo, workflow("bugfix"), inputs)
     assert len(script.attempts) == 3  # type: ignore[attr-defined]
     tests = builtin.exec_of(run, "test")
     assert [t.output and t.output["exit_code"] for t in tests] == [1, 1, 1]
     assert run.status is RunStatus.COMPLETED, run.error
-    summary_prompt = builtin.fake.calls[-1][0].text.replace("\n", " ")
-    assert "exit code 1" in summary_prompt
+    verify = builtin.fake.calls[-1][0]
+    assert "exited with code 1" in (verify.args or "").replace("\n", " ")
 
 
 SKILLS_MD = """# Suggested skills
@@ -367,20 +395,20 @@ def fake_npx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return log
 
 
-PIPELINE_SKILLS = {"spec": "Add a dashboard", "skip_clarify": "true", "with_skills": "true"}
+AUTOMATED_SKILLS = {"spec": "Add a dashboard", "skip_clarify": "true", "with_skills": "true"}
 
 
-async def test_pipeline_skips_skills_by_default(builtin: Env) -> None:
+async def test_automated_skips_skills_by_default(builtin: Env) -> None:
     inputs = {"spec": "Add a dashboard", "skip_clarify": "true"}
-    run = await builtin.runner().start(builtin.repo, workflow("pipeline"), inputs)
+    run = await builtin.runner().start(builtin.repo, workflow("automated"), inputs)
     assert run.status is RunStatus.COMPLETED, run.error
     assert "compose-find-skills" not in called(builtin)
 
 
-async def test_pipeline_finds_skills_after_plan_and_waits(builtin: Env, fake_npx: Path) -> None:
+async def test_automated_finds_skills_after_plan_and_waits(builtin: Env, fake_npx: Path) -> None:
     builtin.fake.scripts = skill_finder  # type: ignore[assignment]
     runner = builtin.runner()
-    run = await runner.start(builtin.repo, workflow("pipeline"), PIPELINE_SKILLS)
+    run = await runner.start(builtin.repo, workflow("automated"), AUTOMATED_SKILLS)
     assert run.status is RunStatus.PAUSED and run.current_step_id == "skills-gate"
     assert called(builtin)[-2:] == ["compose-plan", "compose-find-skills"]
     find = builtin.fake.calls[-1][0]
@@ -400,10 +428,10 @@ async def test_pipeline_finds_skills_after_plan_and_waits(builtin: Env, fake_npx
     assert install.status.value == "completed"
 
 
-async def test_pipeline_rejected_skills_are_not_installed(builtin: Env, fake_npx: Path) -> None:
+async def test_automated_rejected_skills_are_not_installed(builtin: Env, fake_npx: Path) -> None:
     builtin.fake.scripts = skill_finder  # type: ignore[assignment]
-    inputs = {**PIPELINE_SKILLS, "review_skills_verdict": "reject"}
-    run = await builtin.runner().start(builtin.repo, workflow("pipeline"), inputs)
+    inputs = {**AUTOMATED_SKILLS, "review_skills_verdict": "reject"}
+    run = await builtin.runner().start(builtin.repo, workflow("automated"), inputs)
     assert run.status is RunStatus.COMPLETED, run.error
     assert builtin.exec_of(run, "skills-install") == []
     assert not fake_npx.exists()

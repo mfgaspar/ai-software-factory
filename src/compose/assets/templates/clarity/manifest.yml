@@ -1,0 +1,212 @@
+# Clarity manifest: the single source of truth for the clarity-* skills.
+#
+# Shipped with compose and refreshed on every install. Do not edit it in a project:
+# customise through .clarity/config.yml, which is applied on top (the "effective manifest").
+# Paths under `documents` are relative to .clarity/; templates are relative to this folder.
+
+version: 1
+protocol_dir: .clarity
+templates_dir: .compose/templates/clarity
+config: .clarity/config.yml
+config_template: config.yml
+
+# Body hash: the fingerprint of everything after a document's front matter. Every skill
+# computes hashes with exactly this command, replacing FILE with the document's path.
+hash_command: "awk 'n>=2; /^---$/ && n<2 {n++}' FILE | git hash-object --stdin"
+
+# Text that marks a document as still a template. Any occurrence means "draft".
+placeholder_markers:
+  - "[To be determined"
+  - "[TBD"
+  - "[Write this like you're telling a friend"
+  - "[Project Title]"
+  - "No failure modes have been analyzed yet"
+  - "No decisions have been recorded yet"
+
+# Documents that can never be marked not applicable or removed from the mandatory set.
+never_na:
+  - goal/problem.md
+  - goal/requirements.md
+
+# Order in which documents are worked on and reported. Failures come before architecture,
+# which breaks the failures <-> architecture dependency cycle (as in clarity-agent).
+walk_order:
+  - goal/problem.md
+  - goal/stakeholders.md
+  - goal/requirements.md
+  - goal/open-questions.md
+  - solution/solution.md
+  - failures/failures.md
+  - solution/architecture.md
+  - decisions/index.md
+  - product/prd.md
+  - product/ux-flows.md
+  - contracts/api.md
+  - data/data-model.md
+  - ops/setup-guide.md
+  - solution/solution-summary.md
+  - summary.md
+
+# Confirmation batches used by /clarity, in order. Each validated document is in exactly one.
+stages:
+  - name: goal
+    documents: [goal/problem.md, goal/stakeholders.md, goal/requirements.md, goal/open-questions.md]
+  - name: solution
+    documents: [solution/solution.md]
+  - name: failures
+    documents: [failures/failures.md]
+  - name: architecture
+    documents: [solution/architecture.md, decisions/index.md]
+  - name: product
+    documents: [product/prd.md, product/ux-flows.md]
+  - name: technical
+    documents: [contracts/api.md, data/data-model.md, ops/setup-guide.md]
+  - name: summaries
+    documents: [solution/solution-summary.md, summary.md]
+
+# How to route an unresolved, blocking open question by its Strategy field.
+question_strategies:
+  prototyping: clarity-discovery-prototype
+  research: clarity-discovery-research
+  thinking: clarity-problem
+
+documents:
+  goal/problem.md:
+    template: goal/problem.md
+    mandatory: true
+    allow_na: false
+    required_sections: [Problem, Why This Matters, Scope, Success Criteria]
+    depends_on: []
+    produced_by: clarity-problem
+
+  goal/stakeholders.md:
+    template: goal/stakeholders.md
+    mandatory: true
+    allow_na: true
+    required_sections: [Stakeholders]
+    depends_on: [goal/problem.md]
+    produced_by: clarity-problem
+
+  goal/requirements.md:
+    template: goal/requirements.md
+    mandatory: true
+    allow_na: false
+    required_sections: [Functional requirements, Non-functional requirements, Constraints]
+    depends_on: [goal/problem.md, goal/stakeholders.md]
+    produced_by: clarity-problem
+
+  goal/open-questions.md:
+    template: goal/open-questions.md
+    kind: questions          # unresolved questions with "Blocking: yes" make the project blocked
+    mandatory: true
+    allow_na: true
+    required_sections: [Questions]
+    depends_on: [goal/problem.md]
+    produced_by: clarity-problem
+
+  solution/solution.md:
+    template: solution/solution.md
+    mandatory: true
+    allow_na: true
+    required_sections: [Approach, Why this approach, Alternatives considered, Risks and assumptions]
+    depends_on: [goal/problem.md, goal/requirements.md, goal/open-questions.md]
+    produced_by: clarity-solution
+
+  failures/failures.md:
+    template: failures/failures.md
+    mandatory: true
+    allow_na: true
+    required_sections: [Failure modes, Cross-cutting patterns, Management plans]
+    depends_on: [solution/solution.md, solution/architecture.md]
+    produced_by: clarity-failure-analysis
+    stage_skills: [clarity-failure-brainstorm, clarity-failure-analysis, clarity-failure-management]
+
+  solution/architecture.md:
+    template: solution/architecture.md
+    mandatory: true
+    allow_na: true
+    required_sections: [Context, Components, Data flows, Deployment, Cross-cutting concerns, Threat model]
+    depends_on: [solution/solution.md, failures/failures.md]
+    produced_by: clarity-architecture
+
+  decisions/index.md:
+    template: decisions/index.md
+    kind: decisions          # complete needs at least one ADR; proposed/reconsider ADRs block
+    adr_template: decisions/adr.md
+    adr_pattern: decisions/ADR-*.md
+    mandatory: true
+    allow_na: true
+    required_sections: [Decisions]
+    depends_on: []
+    produced_by: clarity-decision
+
+  product/prd.md:
+    template: product/prd.md
+    mandatory: true
+    allow_na: true
+    required_sections: [Overview, Users and personas, Goals and metrics, Scope, Features, Release criteria]
+    depends_on: [goal/problem.md, goal/stakeholders.md, goal/requirements.md, solution/solution.md]
+    produced_by: clarity-prd
+
+  product/ux-flows.md:
+    template: product/ux-flows.md
+    mandatory: true
+    allow_na: true
+    required_sections: [Screens, User journeys, State flows]
+    depends_on: [product/prd.md, goal/requirements.md]
+    produced_by: clarity-ux-flows
+
+  contracts/api.md:
+    template: contracts/api.md
+    kind: contract           # front matter `spec:` must name an existing, well-formed spec file
+    spec_template: contracts/openapi.yaml
+    mandatory: true
+    allow_na: true
+    required_sections: [Overview, Authentication, Operations, Errors, Versioning]
+    depends_on: [solution/architecture.md, goal/requirements.md]
+    produced_by: clarity-api-contracts
+
+  data/data-model.md:
+    template: data/data-model.md
+    mandatory: true
+    allow_na: true
+    required_sections: [Entities, Schema, Entity relationship diagram, Migrations, Retention]
+    depends_on: [solution/architecture.md, goal/requirements.md]
+    produced_by: clarity-data-model
+
+  ops/setup-guide.md:
+    template: ops/setup-guide.md
+    mandatory: true
+    allow_na: true
+    required_sections: [Prerequisites, Environments, Local setup, Configuration, Secrets handling, Troubleshooting]
+    depends_on: [solution/architecture.md, contracts/api.md, data/data-model.md]
+    produced_by: clarity-setup-guide
+
+  solution/solution-summary.md:
+    template: solution/solution-summary.md
+    mandatory: true
+    allow_na: true
+    required_sections: [Summary]
+    depends_on: [solution/solution.md, solution/architecture.md]
+    produced_by: clarity-architecture
+
+  summary.md:
+    template: summary.md
+    mandatory: true
+    allow_na: true
+    required_sections: []
+    depends_on: [goal/problem.md, goal/stakeholders.md, solution/solution.md]
+    produced_by: clarity-message
+
+# Created with the protocol folder but never validated.
+companions:
+  notes.md: notes.md
+  observations.md: observations.md
+  goal/resolved-questions.md: goal/resolved-questions.md
+
+# Templates skills copy when they need them (not documents on their own).
+helpers:
+  adr: decisions/adr.md
+  failure_mode: failures/failure-mode.md
+  thinker_output: failures/brainstorm/thinker.md
+  openapi: contracts/openapi.yaml

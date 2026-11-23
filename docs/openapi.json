@@ -120,7 +120,7 @@
                 "type": "null"
               }
             ],
-            "description": "Workflow id (repo or built-in), or a file path; default: the configured default workflow (pipeline).",
+            "description": "Workflow id (repo or built-in), or a file path; default: the configured default workflow (automated).",
             "title": "Workflow"
           }
         },
@@ -172,7 +172,7 @@
   "info": {
     "description": "Spec-driven development workflows with traceability and cost tracking.",
     "title": "compose",
-    "version": "0.1.0"
+    "version": "0.0.1"
   },
   "openapi": "3.1.0",
   "paths": {

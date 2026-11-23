@@ -31,7 +31,7 @@ class ServerConfig(_Section):
 class DefaultsConfig(_Section):
     engine: str = "claude"
     model: str | None = None
-    workflow: str = "pipeline"  # what compose run starts when no workflow is named
+    workflow: str = "automated"  # what compose run starts when no workflow is named
 
 
 class Config(_Section):

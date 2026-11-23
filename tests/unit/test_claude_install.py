@@ -31,6 +31,50 @@ def assets(tmp_path: Path) -> Path:
     return root
 
 
+@pytest.fixture
+def clarity_assets(assets: Path) -> Path:
+    skill = assets / "skills" / "clarity-validate"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("---\nname: clarity-validate\n---\nv1\n")
+    clarity = assets / "templates" / "clarity"
+    (clarity / "goal").mkdir(parents=True)
+    (clarity / "manifest.yml").write_text("version: 1\n")
+    (clarity / "goal" / "problem.md").write_text("# Problem\n")
+    return assets
+
+
+def test_clarity_skills_install_with_compose(git_repo: Path, clarity_assets: Path) -> None:
+    written = rel(installer.install(git_repo, assets=clarity_assets), git_repo)
+    assert ".claude/skills/clarity-validate/SKILL.md" in written
+    assert ".claude/skills/compose-plan/SKILL.md" in written
+    assert ".claude/skills/other-skill/SKILL.md" not in written
+    assert ".compose/templates/clarity/manifest.yml" in written
+    assert ".compose/templates/clarity/goal/problem.md" in written
+
+    # the manifest is refreshed like a skill; document templates keep local edits
+    (git_repo / ".compose/templates/clarity/goal/problem.md").write_text("# Ours\n")
+    (clarity_assets / "templates/clarity/manifest.yml").write_text("version: 2\n")
+    (clarity_assets / "templates/clarity/goal/problem.md").write_text("# Problem v2\n")
+    again = rel(installer.install(git_repo, assets=clarity_assets), git_repo)
+    assert again == [".compose/templates/clarity/manifest.yml"]
+    assert (git_repo / ".compose/templates/clarity/manifest.yml").read_text() == "version: 2\n"
+    assert (git_repo / ".compose/templates/clarity/goal/problem.md").read_text() == "# Ours\n"
+
+
+def test_clarity_skills_install_into_a_run_worktree(
+    git_repo: Path, clarity_assets: Path, tmp_path: Path
+) -> None:
+    worktree = tmp_path / "wt"
+    git(git_repo, "worktree", "add", "-q", "-b", "002-x", str(worktree))
+    written = rel(installer.install(worktree, worktree=True, assets=clarity_assets), worktree)
+    assert ".claude/skills/clarity-validate/SKILL.md" in written
+    assert ".compose/templates/clarity/manifest.yml" in written
+    assert git(worktree, "status", "--porcelain") == ""
+    exclude = Path(git(worktree, "rev-parse", "--git-path", "info/exclude").strip())
+    exclude = exclude if exclude.is_absolute() else worktree / exclude
+    assert "/.claude/skills/clarity-validate/" in exclude.read_text()
+
+
 def rel(paths: list[Path], base: Path) -> list[str]:
     return sorted(p.relative_to(base).as_posix() for p in paths)
 

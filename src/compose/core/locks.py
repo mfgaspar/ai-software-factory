@@ -15,6 +15,7 @@ import uuid
 from dataclasses import dataclass
 from types import TracebackType
 
+from compose.core import procs
 from compose.core.db import Database
 
 DEFAULT_STALE_AFTER = 60.0
@@ -50,13 +51,7 @@ class LockLost(Exception):
 
 
 def _pid_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+    return procs.pid_alive(pid)
 
 
 def is_stale(info: LockInfo, *, stale_after: float = DEFAULT_STALE_AFTER) -> bool:

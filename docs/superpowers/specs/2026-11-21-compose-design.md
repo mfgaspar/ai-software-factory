@@ -5,12 +5,12 @@ Status: Draft for review
 
 ## 1. Intent
 
-compose is a spec-driven development tool modeled on GitHub's spec-kit, rebuilt as an
+compose is a spec-driven development tool modeled on an existing spec-driven toolkit, rebuilt as an
 **orchestrator**: it runs multi-step development workflows (constitution → specify → plan →
 tasks → implement, or any custom flow) on a coding engine, headlessly, and keeps a complete,
 queryable record of what happened.
 
-Why it exists: spec-kit gives you good prompts/skills and a basic workflow runner, but no API,
+Why it exists: That toolkit gives you good prompts/skills and a basic workflow runner, but no API,
 no hooks around workflow steps, and no record of what the agent did, what it cost, or what it
 changed. compose adds exactly that:
 
@@ -24,14 +24,14 @@ It works with **Claude Code** first, behind an engine boundary so other coding e
 (Codex, Gemini, …) can be added later.
 
 Naming: the product is **compose**. Nothing in code, files, commands, or docs references
-"speckit"/"spec-kit"/"specify". spec-kit is prior art only.
+the prior-art project's name. It is prior art only.
 
 ## 2. Goals, non-goals, anti-goals
 
 ### Goals (v1)
 - Install with one command; `compose init --engine claude` makes a repo ready for Claude Code.
 - Ship the full skill set (constitution, specify, clarify, plan, tasks, analyze, checklist,
-  implement) as Claude Code skills, usable **by hand** in Claude Code exactly like spec-kit's
+  implement) as Claude Code skills, usable **by hand** in Claude Code exactly like the prior art's
   commands, and usable as workflow steps.
 - Ship built-in workflows and let teams write their own.
 - Run workflows from the CLI or the API; pause at gates; resume; abort.
@@ -47,7 +47,7 @@ Naming: the product is **compose**. Nothing in code, files, commands, or docs re
 - Separate "variables" — workflows use `inputs` only.
 - Multi-user server with authentication, roles, or a web dashboard.
 - Automatic push / PR creation at the end of a run (a workflow may add a step for that).
-- spec-kit's extension catalog, presets, overlays, bundles, workflow-function packages, and
+- The prior art's extension catalog, presets, overlays, bundles, workflow-function packages, and
   custom step-type packages.
 - Engines other than Claude Code (only the interface for them).
 
@@ -60,10 +60,10 @@ Naming: the product is **compose**. Nothing in code, files, commands, or docs re
 
 ## 3. Constraints
 
-- Follow spec-kit's approach: Python, installed with `uv tool install`, Typer + Rich CLI;
-  workflow format and run-state files are **loosely inspired** by spec-kit's workflow spec
-  (see §6). spec-kit workflow files are **not** required to run unchanged; where details
-  differ or are undocumented in spec-kit, compose defines its own behavior and documents it.
+- Follow the prior art's approach: Python, installed with `uv tool install`, Typer + Rich CLI;
+  workflow format and run-state files are **loosely inspired** by the prior art's workflow spec
+  (see §6). Its workflow files are **not** required to run unchanged; where details
+  differ or are undocumented there, compose defines its own behavior and documents it.
   The builder writes compose's own workflow reference (schema, expression semantics, step
   semantics incl. gate retry and fan-out) as part of the work.
 - Claude Code is driven through the **Claude Agent SDK for Python**, which streams every
@@ -117,7 +117,7 @@ Naming: the product is **compose**. Nothing in code, files, commands, or docs re
 
 ## 6. Workflow definition
 
-Inspired by spec-kit's workflow spec (not compatible with it), with `integration` renamed to
+Inspired by the prior art's workflow spec (not compatible with it), with `integration` renamed to
 `engine`, and hooks and tracking added. Semantics described here are compose's own.
 
 ### 6.1 Packaging and location
@@ -193,11 +193,11 @@ Common step fields: `id` (required, no `:`), `type`, `engine`, `model`, `reasoni
 `capture` for shell steps. The authoritative, detailed semantics are in
 [docs/workflow-reference.md](../../workflow-reference.md).
 
-Error handling follows spec-kit: a failed step stops the run unless `continue_on_error: true`;
+Error handling follows the prior art: a failed step stops the run unless `continue_on_error: true`;
 exit codes are kept in `steps.<id>.output.exit_code` for branching.
 
 ### 6.5 Expressions
-`{{ expr }}`, spec-kit's expression language: namespaces `inputs.*`, `steps.<id>.output.*`,
+`{{ expr }}`, the prior art's expression language: namespaces `inputs.*`, `steps.<id>.output.*`,
 `item` / `fan_in` (in fan-out), `context.run_id`, `context.workflow_dir`, plus compose
 additions `context.feature.id`, `context.feature.dir`, `context.repo.id`, and per-step tracking
 values `steps.<id>.cost_usd`, `steps.<id>.changes.files`, `steps.<id>.changes.added`,
@@ -215,7 +215,7 @@ Event names:
 - `before_step` / `after_step` — around every step (used by tracking).
 - `before_run` / `after_run` — around the whole run.
 
-Each event maps to one entry or a list. Entry fields (spec-kit's hook fields, executed by
+Each event maps to one entry or a list. Entry fields (the prior art's hook fields, executed by
 compose instead of by the agent):
 
 | Field | Meaning |
@@ -297,7 +297,7 @@ usage and stops the engine when a limit is exceeded; the step fails with reason
 - The runner exports `COMPOSE_RUN_ID` and `COMPOSE_FEATURE` to the engine and hooks.
   `compose feature new` returns the current feature unchanged when `COMPOSE_FEATURE` is set, so
   the specify skill never creates a second feature inside a workflow.
-- **By hand**, features work as in spec-kit: `compose feature new` creates the numbered branch
+- **By hand**, features work as in the prior art: `compose feature new` creates the numbered branch
   and `specs/NNN-name/` **in the current checkout** — no worktree. Worktrees are only a
   workflow-run concern. `compose feature paths` resolves the feature from `COMPOSE_FEATURE` or
   the current branch, so the skills behave identically in both cases.
@@ -361,7 +361,7 @@ repo has committed its own versions, those are used as-is.
 If `full-cycle` creates it inside a run, it lands on the feature branch and reaches the
 default branch when the feature is merged; that change is tracked like any other.
 
-Skills do the same thing by hand or in a workflow. Where spec-kit's commands call bash/
+Skills do the same thing by hand or in a workflow. Where the prior art's commands call bash/
 PowerShell helper scripts (create feature, locate feature paths, check prerequisites), compose
 skills call the `compose` CLI instead (e.g. `compose feature new --json`,
 `compose feature paths --json`) — one cross-platform implementation shared by manual use and
@@ -439,8 +439,8 @@ An OpenAPI document is served at `/openapi.json`.
 ## 17. Left to the builder
 
 - Exact SQLite schema, file JSON shapes, and event schema (must cover §8 fields).
-- Expression evaluator implementation (spec-kit-compatible semantics above).
-- Skill prompt contents and templates (adapted from spec-kit's, renamed to compose).
+- Expression evaluator implementation (semantics as above).
+- Skill prompt contents and templates (adapted from the prior art's, renamed to compose).
 - How the server executes runs internally (async tasks vs worker processes), as long as
   locks, crash recovery and the CLI/server shared store hold.
 - Default allowed-tools list for headless Claude runs.
@@ -452,14 +452,14 @@ An OpenAPI document is served at `/openapi.json`.
 - Run files under `~/.compose/runs/`, not in the repo (they were git-ignored anyway, so they
   wouldn't have travelled with the code); SQLite is the durable record. No auto-commits.
 - New feature's short name: `feature_name` input or slug of the spec text, no engine call.
-- Manual feature creation stays in the current checkout (branch only, like spec-kit);
+- Manual feature creation stays in the current checkout (branch only, like the prior art);
   worktrees only for workflow runs.
 - `compose init` doesn't commit; run worktrees get engine files installed and git-excluded.
 - Fan-out: file/line changes attributed to the fan-out step, not per item.
 - Optional hooks: failure doesn't fail the step; their TTY question is `prompt_text`;
   non-interactive runs execute them.
 - Per-step and run-wide `max_cost_usd` / `max_turns` limits.
-- Step types `github`, `init`, `slot` from spec-kit dropped.
+- Step types `github`, `init`, `slot` from the prior art dropped.
 - Skills call the `compose` CLI instead of bash/PowerShell scripts.
 - A `compose` operator skill for driving compose from inside Claude Code.
 - API on localhost, optional static token, no users.

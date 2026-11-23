@@ -21,6 +21,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from compose.cli.common import console, handle_errors, open_store, print_json
+from compose.core import procs
 from compose.core.db import Database
 from compose.core.home import Home
 from compose.core.models import Repo, RunStatus
@@ -202,8 +203,8 @@ def spawn(home: Home, run_id: str, cwd: Path) -> int:
             stdin=subprocess.DEVNULL,
             stdout=out,
             stderr=subprocess.STDOUT,
-            start_new_session=True,
             env=os.environ.copy(),
+            **procs.detached_kwargs(),
         )
     return process.pid
 
@@ -263,7 +264,7 @@ def run(
     workflow: str | None = typer.Argument(
         None,
         help="Workflow id, or path to a workflow file/folder (default: defaults.workflow "
-        "in config, pipeline).",
+        "in config, automated).",
     ),
     repo: str | None = typer.Option(None, "--repo", help="Repo name or id (default: here)."),
     feature: str | None = typer.Option(

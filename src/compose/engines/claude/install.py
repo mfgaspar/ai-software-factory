@@ -17,22 +17,29 @@ EXCLUDE_BEGIN = "# >>> compose: installed files (managed by compose)"
 EXCLUDE_END = "# <<< compose"
 
 
+SKILL_PREFIXES = ("compose", "clarity")
+# Templates that are shipped data rather than starting points, refreshed like skills.
+REFRESHED_TEMPLATES = {Path("clarity") / "manifest.yml"}
+
+
 def _planned(assets: Path) -> list[tuple[Path, Path, bool]]:
     """(source, target relative to the repo, overwrite) for every installable file.
 
-    Skills are compose's own and are refreshed; templates are only added when missing,
-    so local edits to them survive.
+    Skills (compose's and the clarity family) are refreshed; templates are only added when
+    missing, so local edits to them survive. The clarity manifest is the exception: the
+    clarity skills read it as their source of truth, so it is refreshed with them.
     """
     planned: list[tuple[Path, Path, bool]] = []
     skills = assets / "skills"
     if skills.is_dir():
-        for skill in sorted(p for p in skills.iterdir() if p.name.startswith("compose")):
+        for skill in sorted(p for p in skills.iterdir() if p.name.startswith(SKILL_PREFIXES)):
             for src in sorted(p for p in skill.rglob("*") if p.is_file()):
                 planned.append((src, SKILLS_DIR / skill.name / src.relative_to(skill), True))
     templates = assets / "templates"
     if templates.is_dir():
         for src in sorted(p for p in templates.rglob("*") if p.is_file()):
-            planned.append((src, TEMPLATES_DIR / src.relative_to(templates), False))
+            relative = src.relative_to(templates)
+            planned.append((src, TEMPLATES_DIR / relative, relative in REFRESHED_TEMPLATES))
     return planned
 
 
