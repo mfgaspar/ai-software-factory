@@ -258,6 +258,47 @@ class GateStep(BaseStep):
         return value
 
 
+QUESTION_KINDS = ("setup", "gap", "conflict", "review", "approval")
+
+
+class QuestionsStep(BaseStep):
+    """Ask the pending questions in a questions file (``.clarity/questions.yml`` format).
+
+    On a terminal they're asked and answered; otherwise the run pauses while a question
+    of a holding kind is pending (by default every kind but ``approval``).
+    """
+
+    TEMPLATE_FIELDS: ClassVar[tuple[str, ...]] = ("file",)
+
+    type: Literal["questions"] = "questions"
+    file: str = Field(min_length=1, description="Relative to the run's working directory.")
+    ask: bool = True
+    holding_kinds: list[Literal["setup", "gap", "conflict", "review", "approval"]] | None = None
+
+    @property
+    def holding(self) -> set[str]:
+        if self.holding_kinds is None:
+            return {k for k in QUESTION_KINDS if k != "approval"}
+        return set(self.holding_kinds)
+
+
+CLARITY_ACTIONS = ("record-verdict", "stamp-constitution", "commit", "merge")
+
+
+class ClarityStep(BaseStep):
+    """compose's own clarity bookkeeping; allowed only in built-in workflows."""
+
+    type: Literal["clarity"] = "clarity"
+    action: Literal["record-verdict", "stamp-constitution", "commit", "merge"]
+    from_step: str | None = None
+
+    @model_validator(mode="after")
+    def _needs_from_step(self) -> ClarityStep:
+        if self.action == "record-verdict" and not self.from_step:
+            raise ValueError("a record-verdict clarity step needs 'from_step'")
+        return self
+
+
 class IfStep(BaseStep):
     CONDITION_FIELDS: ClassVar[tuple[str, ...]] = ("condition",)
 
@@ -352,6 +393,8 @@ Step = Annotated[
         | PromptStep
         | ShellStep
         | GateStep
+        | QuestionsStep
+        | ClarityStep
         | IfStep
         | SwitchStep
         | WhileStep
@@ -530,6 +573,8 @@ class Workflow(_Model):
                 for target in step.wait_for:
                     if target not in ids:
                         errors.append(f"{where}.wait_for: unknown step {target!r}")
+            if isinstance(step, ClarityStep) and step.from_step and step.from_step not in ids:
+                errors.append(f"{where}.from_step: unknown step {step.from_step!r}")
             if isinstance(step, WorkflowCallStep) and step.workflow == self.workflow.id:
                 errors.append(f"{where}.workflow: a workflow cannot call itself")
         for event in self.hooks:

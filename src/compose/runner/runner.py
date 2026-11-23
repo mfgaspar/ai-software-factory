@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from compose.clarity import branch as clarity_branch
+from compose.clarity.questions import Question
 from compose.core import locks, store
 from compose.core.config import Config, load_config
 from compose.core.db import Database, utcnow
@@ -51,9 +52,10 @@ from compose.runner.errors import (
     StepFailed,
 )
 from compose.runner.state import CompletedStep, RunFiles, RunState, check_transition
-from compose.runner.steps import control, engine, gate, shell, subworkflow
+from compose.runner.steps import clarity, control, engine, gate, questions, shell, subworkflow
 from compose.runner.steps.base import Outcome
 from compose.tracking import records
+from compose.tracking.aggregate import LEAF
 from compose.workflows import expressions, loader
 from compose.workflows.schema import (
     BaseStep,
@@ -76,6 +78,8 @@ LEAF_EXECUTORS: dict[str, LeafExecutor] = {
     "prompt": engine.execute,
     "shell": shell.execute,
     "gate": gate.execute,
+    "questions": questions.execute,
+    "clarity": clarity.execute,
 }
 CONTROL_EXECUTORS: dict[str, LeafExecutor] = {
     "if": control.execute_if,
@@ -96,6 +100,7 @@ class Interaction:
     ask_input: Callable[[str, InputSpec], str] | None = None
     ask_gate: Callable[[str, list[str]], str] | None = None
     ask_confirm: Callable[[str], bool] | None = None
+    ask_question: Callable[[Question], str] | None = None
 
 
 @dataclass
@@ -579,7 +584,7 @@ class RunContext:
         """
         own_changes = (row.files_changed, row.lines_added, row.lines_removed)
         totals = self.db.conn.execute(
-            """
+            f"""
             WITH RECURSIVE tree(id) AS (
                 SELECT id FROM step_execs WHERE parent_exec_id = ?
                 UNION ALL
@@ -589,7 +594,7 @@ class RunContext:
                    COALESCE(SUM(cache_read_tokens), 0), COALESCE(SUM(cache_write_tokens), 0),
                    COALESCE(SUM(cost_usd), 0)
             FROM step_execs WHERE id IN (SELECT id FROM tree)
-              AND step_type IN ('command', 'prompt', 'shell', 'gate')
+              AND step_type IN {LEAF}
             """,
             (row.id,),
         ).fetchone()
@@ -604,7 +609,7 @@ class RunContext:
             row.files_changed, row.lines_added, row.lines_removed = own_changes
             return
         changes = self.db.conn.execute(
-            """
+            f"""
             WITH RECURSIVE tree(id) AS (
                 SELECT id FROM step_execs WHERE parent_exec_id = ?
                 UNION ALL
@@ -613,7 +618,7 @@ class RunContext:
             SELECT COALESCE(SUM(files_changed), 0), COALESCE(SUM(lines_added), 0),
                    COALESCE(SUM(lines_removed), 0)
             FROM step_execs WHERE id IN (SELECT id FROM tree)
-              AND step_type IN ('command', 'prompt', 'shell', 'gate', 'fan-out')
+              AND (step_type IN {LEAF} OR step_type = 'fan-out')
             """,
             (row.id,),
         ).fetchone()
@@ -834,7 +839,7 @@ class Runner:
 
     def _spent(self, root_run_id: str) -> float:
         row = self.db.conn.execute(
-            """
+            f"""
             WITH RECURSIVE tree(id) AS (
                 SELECT id FROM runs WHERE id = ?
                 UNION ALL SELECT r.id FROM runs r JOIN tree t ON r.parent_run_id = t.id
@@ -842,12 +847,12 @@ class Runner:
             SELECT
               (SELECT COALESCE(SUM(cost_usd), 0) FROM step_execs
                WHERE run_id IN (SELECT id FROM tree)
-                 AND step_type IN ('command', 'prompt', 'shell', 'gate')),
+                 AND step_type IN {LEAF}),
               (SELECT COALESCE(SUM(h.cost_usd), 0)
                FROM hook_execs h LEFT JOIN step_execs s ON s.id = h.step_exec_id
                WHERE h.run_id IN (SELECT id FROM tree)
                  AND (s.id IS NULL OR s.status IN ('paused', 'running')
-                      OR s.step_type NOT IN ('command', 'prompt', 'shell', 'gate')))
+                      OR s.step_type NOT IN {LEAF}))
             """,
             (root_run_id,),
         ).fetchone()
@@ -971,6 +976,7 @@ class Runner:
         except RunPaused as paused:
             run.error = paused.reason
             state.error = paused.reason
+            self._commit_clarity(rc, RunStatus.PAUSED)
             self._set_status(run, state, files, RunStatus.PAUSED)
             rc.emit("run_paused", step_id=paused.step_id, reason=paused.reason)
             if raise_on_stop:
@@ -978,6 +984,7 @@ class Runner:
         except RunAborted as aborted:
             run.error = aborted.reason
             state.error = aborted.reason
+            self._commit_clarity(rc, RunStatus.ABORTED)
             self._set_status(run, state, files, RunStatus.ABORTED)
             rc.emit("run_finished", status="aborted", reason=aborted.reason)
             if raise_on_stop:
@@ -985,8 +992,27 @@ class Runner:
         except (StepFailed, expressions.ExpressionError) as failed:
             run.error = str(failed)
             state.error = str(failed)
+            self._commit_clarity(rc, RunStatus.FAILED)
             self._set_status(run, state, files, RunStatus.FAILED)
             rc.emit("run_finished", status="failed", error=str(failed))
+
+    def _commit_clarity(self, rc: RunContext, status: RunStatus) -> None:
+        """A clarity run that stops keeps what it wrote: commit the clarity paths on its
+        branch. A failure is recorded as an event and never changes the run's outcome."""
+        if (
+            rc.feature is not None
+            or rc.run.parent_run_id is not None
+            or rc.definition.id not in clarity.CLARITY_WORKFLOWS
+        ):
+            return
+        message = clarity.commit_message(rc, status.value)
+        try:
+            sha = clarity_branch.commit_paths(rc.worktree, message)
+        except Exception as exc:  # never mask the run's own outcome
+            rc.emit("clarity_commit_failed", error=str(exc))
+            return
+        if sha is not None:
+            rc.emit("clarity_committed", sha=sha, message=message)
 
     async def _watch_abort(self, run_id: str, shared: Shared) -> None:
         while not shared.abort_event.is_set():

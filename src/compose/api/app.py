@@ -437,7 +437,7 @@ def create_app(
         """Answer the gate the run waits at and resume it."""
         run = views.get_run(server.db, run_id)
         waiting = views.waiting_gate(server.home, run)
-        if waiting is None:
+        if waiting is None or views.waiting_questions(server.home, run) is not None:
             raise HTTPException(409, f"Run {run_id} is not waiting at a gate")
         if waiting["step_id"] != step_id:
             raise HTTPException(409, f"Run {run_id} waits at gate {waiting['step_id']!r}")

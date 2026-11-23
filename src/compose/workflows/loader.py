@@ -81,7 +81,21 @@ def definition_file(path: Path) -> Path:
 
 def load_path(path: Path, source: Source = "file") -> LoadedWorkflow:
     file = definition_file(path.expanduser().resolve())
-    return LoadedWorkflow(parse_workflow(file.read_text(), str(file)), file, source)
+    definition = parse_workflow(file.read_text(), str(file))
+    if source != "builtin" and not file.is_relative_to(BUILTIN_DIR.resolve()):
+        _reject_internal_steps(definition, file)
+    return LoadedWorkflow(definition, file, source)
+
+
+def _reject_internal_steps(definition: Workflow, file: Path) -> None:
+    """``type: clarity`` steps are compose's own: only built-in workflows may use them."""
+    internal = [where for where, step, _ in definition.iter_steps() if step.kind == "clarity"]
+    if internal:
+        details = "\n".join(
+            f"  {where}: type clarity is internal to compose's built-in workflows"
+            for where in internal
+        )
+        raise WorkflowError(f"{file}: invalid workflow:\n{details}")
 
 
 def _looks_like_path(ref: str) -> bool:

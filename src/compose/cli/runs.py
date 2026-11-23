@@ -20,6 +20,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
+from compose.clarity.questions import Question
 from compose.cli.common import console, handle_errors, open_store, print_json
 from compose.core import procs
 from compose.core.db import Database
@@ -126,8 +127,35 @@ def _interaction(interactive: bool) -> Interaction:
         return bool(typer.confirm(message, default=True))
 
     return Interaction(
-        interactive=True, ask_input=ask_input, ask_gate=ask_gate, ask_confirm=ask_confirm
+        interactive=True,
+        ask_input=ask_input,
+        ask_gate=ask_gate,
+        ask_confirm=ask_confirm,
+        ask_question=ask_question,
     )
+
+
+def ask_question(q: Question) -> str:
+    """Show a question with its numbered options and recommendation; Enter takes the
+    recommendation (or leaves the question for later when there's none)."""
+    where = f" {q.document}" if q.document else ""
+    console.print(f"[yellow]?[/yellow] [bold]{q.id}[/bold] [dim]{q.kind}{where}[/dim]")
+    console.print(q.question, highlight=False, soft_wrap=True)
+    for number, option in enumerate(q.options, 1):
+        mark = " [green](recommended)[/green]" if option == q.recommended else ""
+        console.print(f"  {number}. {option}{mark}", highlight=False)
+    if q.recommended and q.recommended not in q.options:
+        console.print(f"  Recommended: {q.recommended}", highlight=False)
+    hint = f"Enter takes {q.recommended!r}" if q.recommended else "Enter skips it"
+    while True:
+        text = str(typer.prompt(f"Answer ({hint})", default="", show_default=False)).strip()
+        if not text:
+            return q.recommended or ""
+        if text.isdigit() and 1 <= int(text) <= len(q.options):
+            return q.options[int(text) - 1]
+        if q.free_text and q.kind != "approval" or text in q.options:
+            return text
+        console.print("[red]Choose one of the numbered options.[/red]")
 
 
 class Progress:
@@ -169,6 +197,12 @@ class Progress:
             console.print(
                 f"[yellow]⏸ waiting at gate {event.get('step_id')}:[/yellow]"
                 f" {event.get('message')} ({'/'.join(event.get('options') or [])})",
+                highlight=False,
+            )
+        elif kind == "questions_waiting":
+            console.print(
+                f"[yellow]⏸ waiting for answers at {event.get('step_id')}:[/yellow]"
+                f" {', '.join(event.get('ids') or [])}",
                 highlight=False,
             )
 
@@ -233,7 +267,9 @@ def _print_outcome(detail: dict[str, Any]) -> None:
             f" +{changes['added']} -{changes['removed']}",
         )
     )
-    if detail.get("waiting"):
+    if detail.get("waiting") and detail["waiting"].get("questions") is not None:
+        _print_questions(detail["waiting"]["questions"])
+    elif detail.get("waiting"):
         gate = detail["waiting"]
         options = "|".join(gate.get("options") or [])
         console.print(
@@ -248,6 +284,25 @@ def _print_outcome(detail: dict[str, Any]) -> None:
             highlight=False,
             soft_wrap=True,
         )
+
+
+def _print_questions(pending: list[dict[str, Any]]) -> None:
+    console.print(f"Waiting for answers to {len(pending)} question(s):")
+    for q in pending:
+        options = " | ".join(q.get("options") or [])
+        extras = [f"options: {options}"] if options else []
+        if q.get("recommended"):
+            extras.append(f"recommended: {q['recommended']}")
+        if q.get("approver"):
+            extras.append(f"approver: {q['approver']}")
+        tail = f" [dim]({'; '.join(extras)})[/dim]" if extras else ""
+        kind = f" [dim]{q['kind']}[/dim]" if q.get("kind") else ""
+        console.print(
+            f"  [bold]{q['id']}[/bold]{kind} {q.get('question') or ''}{tail}",
+            highlight=False,
+            soft_wrap=True,
+        )
+    console.print('Answer with: compose clarity answer <ID> "<answer>"', highlight=False)
 
 
 def _repo_or_none(db: Database, ref: str | None) -> Repo | None:

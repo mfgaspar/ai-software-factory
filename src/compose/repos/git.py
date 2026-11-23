@@ -205,3 +205,9 @@ def is_ignored(worktree: Path, path: str) -> bool:
 def update_ref(repo: Path, branch: str, new: str, old: str) -> None:
     """Move ``branch`` to ``new``, only if it still points at ``old``."""
     git(repo, "update-ref", f"refs/heads/{branch}", new, old)
+
+
+def user_name(path: Path) -> str | None:
+    """The git user name configured for ``path`` (``user.name``), or None."""
+    proc = run_git(path, "config", "user.name", check=False)
+    return proc.stdout.strip() or None if proc.returncode == 0 else None

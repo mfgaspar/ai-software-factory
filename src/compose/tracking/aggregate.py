@@ -20,7 +20,7 @@ from typing import Any, Literal
 from compose.core.db import Database
 
 GroupBy = Literal["step", "run", "feature", "repo", "day"]
-LEAF = "('command', 'prompt', 'shell', 'gate')"
+LEAF = "('command', 'prompt', 'shell', 'gate', 'questions', 'clarity')"
 
 _KEYS: dict[str, str] = {
     "step": "step_id",

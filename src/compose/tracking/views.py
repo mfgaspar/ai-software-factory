@@ -7,8 +7,10 @@ Every view returns plain JSON-ready data. A run's view covers its child runs
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
+from compose.clarity import questions
 from compose.core import store
 from compose.core.db import Database
 from compose.core.home import Home
@@ -22,6 +24,7 @@ from compose.core.models import (
     RunStatus,
     StepExec,
 )
+from compose.runner.errors import InputError
 from compose.runner.state import RunFiles
 from compose.tracking import aggregate
 
@@ -111,8 +114,9 @@ def step_summary(row: StepExec) -> dict[str, Any]:
     }
 
 
-def waiting_gate(home: Home, run: Run) -> dict[str, Any] | None:
-    """The gate a paused run waits at: its step, message and options."""
+def _paused_target(home: Home, run: Run) -> tuple[RunFiles, str | None, str] | None:
+    """Where a paused run waits: the run files (its own or a child's), the step key, the
+    owning run id."""
     if run.status is not RunStatus.PAUSED:
         return None
     files = RunFiles(home.run_dir(run.id))
@@ -127,17 +131,61 @@ def waiting_gate(home: Home, run: Run) -> dict[str, Any] | None:
         if not child_state.paused_at:
             break
         files, state, key, owner = child, child_state, child_state.paused_at, child_id
-    waiting = next(
-        (e for e in reversed(files.read_events()) if e.get("type") == "gate_waiting"), None
+    return files, key, owner
+
+
+def _questions_event(files: RunFiles, key: str | None) -> dict[str, Any] | None:
+    """The ``questions_waiting`` event of the step paused at ``key``, if it's a questions
+    step."""
+    for event in reversed(files.read_events()):
+        if event.get("type") == "questions_waiting":
+            return event if key and event.get("key") == key else None
+        if event.get("type") == "run_started":
+            return None
+    return None
+
+
+def waiting_gate(home: Home, run: Run) -> dict[str, Any] | None:
+    """The gate (or questions step) a paused run waits at: its step, message and options."""
+    target = _paused_target(home, run)
+    if target is None:
+        return None
+    files, key, owner = target
+    asked = _questions_event(files, key)
+    waiting = (
+        None
+        if asked is not None
+        else next(
+            (e for e in reversed(files.read_events()) if e.get("type") == "gate_waiting"), None
+        )
     )
     return {
         "run_id": owner,
         "key": key,
-        "step_id": waiting.get("step_id") if waiting else key,
+        "step_id": (asked or waiting or {}).get("step_id", key),
         "message": waiting.get("message") if waiting else None,
         "options": waiting.get("options") if waiting else None,
         "reason": run.error,
     }
+
+
+def waiting_questions(home: Home, run: Run) -> list[dict[str, Any]] | None:
+    """The pending questions a run paused at a ``questions`` step waits for, or None."""
+    target = _paused_target(home, run)
+    if target is None:
+        return None
+    files, key, _ = target
+    asked = _questions_event(files, key)
+    if asked is None:
+        return None
+    ids = list(asked.get("ids") or [])
+    try:
+        found = {q.id: q for q in questions.load(Path(str(asked.get("file"))))}
+    except (InputError, OSError):
+        return [{"id": qid} for qid in ids]
+    return [
+        found[qid].model_dump(mode="json") for qid in ids if qid in found and found[qid].is_pending
+    ]
 
 
 def run_brief(db: Database, run: Run) -> dict[str, Any]:
@@ -168,12 +216,19 @@ def run_detail(db: Database, home: Home, run_id: str) -> dict[str, Any]:
         "worktree": feature.worktree_path if feature else _workdir(home, run),
         "inputs": run.inputs,
         "outputs": run.outputs,
-        "waiting": waiting_gate(home, run),
+        "waiting": _waiting(home, run),
         "children": children,
         "steps": [step_summary(r) for r in step_execs(db, run.id)],
         "totals": aggregate.grand_total(db, run_id=run.id).to_json(),
         "run_dir": str(home.run_dir(run.id)),
     }
+
+
+def _waiting(home: Home, run: Run) -> dict[str, Any] | None:
+    waiting = waiting_gate(home, run)
+    if waiting is not None:
+        waiting["questions"] = waiting_questions(home, run)
+    return waiting
 
 
 def _workdir(home: Home, run: Run) -> str | None:
