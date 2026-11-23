@@ -43,6 +43,36 @@
         "title": "AddRepo",
         "type": "object"
       },
+      "Answers": {
+        "properties": {
+          "answers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Question id to answer.",
+            "title": "Answers",
+            "type": "object"
+          },
+          "by": {
+            "description": "Who answers (an approval's approver).",
+            "minLength": 1,
+            "title": "By",
+            "type": "string"
+          },
+          "resume": {
+            "default": true,
+            "description": "Resume the paused clarity run when nothing it asked is pending.",
+            "title": "Resume",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "answers",
+          "by"
+        ],
+        "title": "Answers",
+        "type": "object"
+      },
       "GateDecision": {
         "properties": {
           "choice": {
@@ -90,6 +120,74 @@
           }
         },
         "title": "ResumeRun",
+        "type": "object"
+      },
+      "StartBuild": {
+        "properties": {
+          "feature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Existing feature (NNN-name); default new.",
+            "title": "Feature"
+          },
+          "inputs": {
+            "additionalProperties": true,
+            "title": "Inputs",
+            "type": "object"
+          },
+          "spec": {
+            "description": "What to build: the feature, in a sentence.",
+            "minLength": 1,
+            "title": "Spec",
+            "type": "string"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Workflow id or file path; default: the configured default workflow.",
+            "title": "Workflow"
+          }
+        },
+        "required": [
+          "spec"
+        ],
+        "title": "StartBuild",
+        "type": "object"
+      },
+      "StartClarity": {
+        "properties": {
+          "mode": {
+            "default": "mixed",
+            "description": "mixed pauses for answers; auto only drafts. No interactive here.",
+            "enum": [
+              "mixed",
+              "auto"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "sources": {
+            "description": "Paths or URLs to draft from, passed to /clarity.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Sources",
+            "type": "array"
+          }
+        },
+        "title": "StartClarity",
         "type": "object"
       },
       "StartRun": {
@@ -604,6 +702,463 @@
         ]
       }
     },
+    "/repos/{repo}/builds": {
+      "post": {
+        "description": "Build a feature: the default workflow with ``spec`` as its description, after the\npre-run check (409 with ``problems`` when it refuses; ``warnings`` otherwise).",
+        "operationId": "start_build_repos__repo__builds_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartBuild"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Build Repos  Repo  Builds Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Build",
+        "tags": [
+          "runs"
+        ]
+      }
+    },
+    "/repos/{repo}/clarity": {
+      "get": {
+        "description": "Documents, verdict and whether it's current, questions, constitution currency and\nwhether a build would start. No model call.",
+        "operationId": "clarity_status_repos__repo__clarity_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Clarity Status Repos  Repo  Clarity Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clarity Status",
+        "tags": [
+          "clarity"
+        ]
+      },
+      "post": {
+        "description": "Start a clarity run (mixed or auto). 409 while another one is active.",
+        "operationId": "start_clarity_repos__repo__clarity_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartClarity"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Start Clarity Repos  Repo  Clarity Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Start Clarity",
+        "tags": [
+          "clarity"
+        ]
+      }
+    },
+    "/repos/{repo}/clarity/answers": {
+      "post": {
+        "description": "Record answers, all or nothing (422 on any invalid one). Then resume the paused\nclarity run when nothing it asked is pending.",
+        "operationId": "clarity_answers_repos__repo__clarity_answers_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Answers"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Clarity Answers Repos  Repo  Clarity Answers Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clarity Answers",
+        "tags": [
+          "clarity"
+        ]
+      }
+    },
+    "/repos/{repo}/clarity/merge": {
+      "post": {
+        "description": "Retry merging a passing clarity branch into the default branch.",
+        "operationId": "clarity_merge_repos__repo__clarity_merge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "409": {
+            "description": "Not merged: `pending_reason` says why."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clarity Merge",
+        "tags": [
+          "clarity"
+        ]
+      }
+    },
+    "/repos/{repo}/clarity/questions": {
+      "get": {
+        "description": "The repo's pending questions, in the order they're asked.",
+        "operationId": "clarity_questions_repos__repo__clarity_questions_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Clarity Questions Repos  Repo  Clarity Questions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clarity Questions",
+        "tags": [
+          "clarity"
+        ]
+      }
+    },
+    "/repos/{repo}/clarity/validate": {
+      "post": {
+        "description": "Start a clarity-validate run: records the verdict; on PASS refreshes the\nconstitution and merges.",
+        "operationId": "clarity_validate_repos__repo__clarity_validate_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "repo",
+            "required": true,
+            "schema": {
+              "title": "Repo",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "authorization",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Clarity Validate Repos  Repo  Clarity Validate Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Clarity Validate",
+        "tags": [
+          "clarity"
+        ]
+      }
+    },
     "/repos/{repo}/features": {
       "get": {
         "description": "Features from the repo's branches and specs folders, with their run counts.",
@@ -740,7 +1295,7 @@
     },
     "/repos/{repo}/runs": {
       "post": {
-        "description": "Create a run and start it in the background. 409 when the feature is busy.",
+        "description": "Create a run and start it in the background. 409 when the feature is busy or the\npre-run check refuses (with ``problems``); its ``warnings`` otherwise.",
         "operationId": "start_run_repos__repo__runs_post",
         "parameters": [
           {

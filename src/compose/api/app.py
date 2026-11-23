@@ -17,10 +17,12 @@ from typing import Annotated, Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from compose import __version__
 from compose.api import events as run_events
+from compose.clarity import service as clarity
+from compose.clarity.preflight import PreflightError
 from compose.core import store
 from compose.core.config import Config, ConfigError, load_config
 from compose.core.db import Database, open_database, utcnow
@@ -74,11 +76,49 @@ class GateDecision(BaseModel):
     choice: str
 
 
+class StartClarity(BaseModel):
+    sources: list[str] = Field(
+        default_factory=list, description="Paths or URLs to draft from, passed to /clarity."
+    )
+    mode: Literal["mixed", "auto"] = Field(
+        "mixed", description="mixed pauses for answers; auto only drafts. No interactive here."
+    )
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _no_interactive(cls, value: Any) -> Any:
+        if value == "interactive":
+            raise ValueError(
+                "interactive mode needs a person in a Claude Code session"
+                " (compose clarity --mode interactive); use mixed or auto"
+            )
+        return value
+
+
+class Answers(BaseModel):
+    answers: dict[str, str] = Field(description="Question id to answer.")
+    by: str = Field(min_length=1, description="Who answers (an approval's approver).")
+    resume: bool = Field(
+        True, description="Resume the paused clarity run when nothing it asked is pending."
+    )
+
+
+class StartBuild(BaseModel):
+    spec: str = Field(min_length=1, description="What to build: the feature, in a sentence.")
+    workflow: str | None = Field(
+        None, description="Workflow id or file path; default: the configured default workflow."
+    )
+    feature: str | None = Field(None, description="Existing feature (NNN-name); default new.")
+    inputs: dict[str, Any] = Field(default_factory=dict)
+
+
 # ----------------------------------------------------------------- errors
 
 
 def _status_for(exc: Exception) -> int:
     message = str(exc)
+    if isinstance(exc, PreflightError):
+        return 409
     if isinstance(exc, views.ViewError) or message.startswith("No "):
         return 404
     if isinstance(exc, LockHeld) or "already has an active run" in message:
@@ -91,6 +131,7 @@ def _status_for(exc: Exception) -> int:
 
 
 EXPECTED: tuple[type[Exception], ...] = (
+    PreflightError,
     views.ViewError,
     RunError,
     TransitionError,
@@ -184,7 +225,10 @@ def create_app(
     )
 
     async def expected_errors(request: Request, exc: Exception) -> JSONResponse:
-        return JSONResponse({"detail": str(exc)}, status_code=_status_for(exc))
+        body: dict[str, Any] = {"detail": str(exc)}
+        if isinstance(exc, PreflightError):
+            body["problems"] = [{"message": p.message, "fix": p.fix} for p in exc.problems]
+        return JSONResponse(body, status_code=_status_for(exc))
 
     for error in EXPECTED:
         app.add_exception_handler(error, expected_errors)
@@ -340,15 +384,32 @@ def create_app(
 
     # -------------------------------------------------------------- runs
 
+    async def started(server: Server, runner: Runner, run_id: str) -> dict[str, Any]:
+        """Launch a created run; its brief, with the pre-run check's warnings."""
+        warnings = runner.last_warnings
+        await server.launch(runner, run_id)
+        current = views.get_run(server.db, run_id)
+        return {**views.run_brief(server.db, current), "run_id": run_id, "warnings": warnings}
+
     @app.post("/repos/{repo}/runs", tags=["runs"], dependencies=auth, status_code=202)
     async def start_run(repo: str, body: StartRun, server: S) -> dict[str, Any]:
-        """Create a run and start it in the background. 409 when the feature is busy."""
+        """Create a run and start it in the background. 409 when the feature is busy or the
+        pre-run check refuses (with ``problems``); its ``warnings`` otherwise."""
         found = registry.get_repo(server.db, repo)
         runner = server.runner()
         run = runner.create_run(found, body.workflow, body.inputs, feature=body.feature)
-        await server.launch(runner, run.id)
-        current = views.get_run(server.db, run.id)
-        return {**views.run_brief(server.db, current), "run_id": run.id}
+        return await started(server, runner, run.id)
+
+    @app.post("/repos/{repo}/builds", tags=["runs"], dependencies=auth, status_code=202)
+    async def start_build(repo: str, body: StartBuild, server: S) -> dict[str, Any]:
+        """Build a feature: the default workflow with ``spec`` as its description, after the
+        pre-run check (409 with ``problems`` when it refuses; ``warnings`` otherwise)."""
+        found = registry.get_repo(server.db, repo)
+        runner = server.runner()
+        loaded = loader.resolve(body.workflow or server.config.defaults.workflow, Path(found.path))
+        inputs = clarity.build_inputs(loaded.definition, body.spec, body.inputs)
+        run = runner.create_run(found, loaded, inputs, feature=body.feature)
+        return await started(server, runner, run.id)
 
     @app.get("/runs", tags=["runs"], dependencies=auth)
     def list_runs(
@@ -454,6 +515,79 @@ def create_app(
         """Abort a run; a running one stops at its next engine event."""
         run = server.runner().request_abort(run_id)
         return views.run_brief(server.db, run)
+
+    # ----------------------------------------------------------- clarity
+
+    def clarity_branch(server: Server) -> str:
+        return server.config.clarity.branch
+
+    @app.post("/repos/{repo}/clarity", tags=["clarity"], dependencies=auth, status_code=202)
+    async def start_clarity(repo: str, body: StartClarity, server: S) -> dict[str, Any]:
+        """Start a clarity run (mixed or auto). 409 while another one is active."""
+        found = registry.get_repo(server.db, repo)
+        runner = server.runner()
+        inputs = {"sources": " ".join(body.sources), "mode": body.mode}
+        run = runner.create_run(found, "clarity", inputs)
+        return await started(server, runner, run.id)
+
+    @app.get("/repos/{repo}/clarity", tags=["clarity"], dependencies=auth)
+    def clarity_status(repo: str, server: S) -> dict[str, Any]:
+        """Documents, verdict and whether it's current, questions, constitution currency and
+        whether a build would start. No model call."""
+        found = registry.get_repo(server.db, repo)
+        return clarity.status(server.db, server.home, found, clarity_branch(server))
+
+    @app.get("/repos/{repo}/clarity/questions", tags=["clarity"], dependencies=auth)
+    def clarity_questions(repo: str, server: S) -> list[dict[str, Any]]:
+        """The repo's pending questions, in the order they're asked."""
+        found = registry.get_repo(server.db, repo)
+        pending = clarity.pending(server.home, found, clarity_branch(server))
+        return [q.model_dump(mode="json") for q in pending]
+
+    @app.post("/repos/{repo}/clarity/answers", tags=["clarity"], dependencies=auth)
+    async def clarity_answers(repo: str, body: Answers, server: S) -> dict[str, Any]:
+        """Record answers, all or nothing (422 on any invalid one). Then resume the paused
+        clarity run when nothing it asked is pending."""
+        found = registry.get_repo(server.db, repo)
+        done = clarity.answer(
+            server.db, server.home, found, clarity_branch(server), body.answers, body.by
+        )
+        resumed = None
+        if body.resume and done.resumable is not None:
+            runner = server.runner()
+            runner.prepare_resume(done.resumable.id)
+            await server.launch(runner, done.resumable.id)
+            resumed = done.resumable.id
+        return {"recorded": [q.id for q in done.recorded], "resumed_run": resumed}
+
+    @app.post(
+        "/repos/{repo}/clarity/validate", tags=["clarity"], dependencies=auth, status_code=202
+    )
+    async def clarity_validate(repo: str, server: S) -> dict[str, Any]:
+        """Start a clarity-validate run: records the verdict; on PASS refreshes the
+        constitution and merges."""
+        found = registry.get_repo(server.db, repo)
+        runner = server.runner()
+        run = runner.create_run(found, "clarity-validate")
+        return await started(server, runner, run.id)
+
+    @app.post(
+        "/repos/{repo}/clarity/merge",
+        tags=["clarity"],
+        dependencies=auth,
+        response_model=None,
+        responses={409: {"description": "Not merged: `pending_reason` says why."}},
+    )
+    def clarity_merge(repo: str, server: S) -> dict[str, Any] | JSONResponse:
+        """Retry merging a passing clarity branch into the default branch."""
+        found = registry.get_repo(server.db, repo)
+        outcome = clarity.merge(server.db, server.home, found, clarity_branch(server))
+        if not outcome.merged:
+            reason = outcome.pending_reason
+            return JSONResponse(
+                {"detail": reason, "merged": False, "pending_reason": reason}, status_code=409
+            )
+        return {"merged": True}
 
     # ------------------------------------------------------------- costs
 

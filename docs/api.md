@@ -23,7 +23,7 @@ Errors are JSON `{"detail": "..."}`:
 |---|---|
 | 401 | missing or wrong token |
 | 404 | unknown repo, workflow, feature, run or step |
-| 409 | the feature already has an active run; the run is in the wrong state (e.g. resuming a completed run, answering a gate it is not waiting at) |
+| 409 | the feature already has an active run; the run is in the wrong state (e.g. resuming a completed run, answering a gate it is not waiting at); the pre-run check refused a feature run (the body adds `problems: [{message, fix}]`) |
 | 422 | missing or invalid inputs, an invalid workflow, an unknown engine, a bad query value |
 
 ## Routes
@@ -38,9 +38,9 @@ Errors are JSON `{"detail": "..."}`:
 | `GET /repos/{repo}/workflows/{id}` | definition and effective hooks |
 | `GET /repos/{repo}/features` | features with run counts |
 | `GET /repos/{repo}/features/{feature}` | paths, which spec files exist, worktree, runs, totals |
-| `POST /repos/{repo}/runs` | `{workflow, feature?, inputs}`: start a run (202) |
+| `POST /repos/{repo}/runs` | `{workflow, feature?, inputs}`: start a run (202, with the pre-run check's `warnings`) |
 | `GET /runs?repo=&feature=&status=&since=&limit=` | root runs, newest first, with cost |
-| `GET /runs/{run}` | status, current step, waiting gate, every step, totals |
+| `GET /runs/{run}` | status, current step, waiting gate (with `waiting.questions` at a questions step), every step, totals |
 | `GET /runs/{run}/steps/{exec_id}` | one step execution: totals, hooks, files, actions |
 | `GET /runs/{run}/trace?step=` | actions per step, hooks nested |
 | `GET /runs/{run}/changes?step=` | files and lines per step |
@@ -49,6 +49,13 @@ Errors are JSON `{"detail": "..."}`:
 | `POST /runs/{run}/resume` | `{inputs?, choice?}`: continue a paused or failed run (202) |
 | `POST /runs/{run}/gates/{step}` | `{choice}`: answer the waiting gate and resume (202) |
 | `POST /runs/{run}/abort` | abort |
+| `POST /repos/{repo}/builds` | `{spec, workflow?, feature?, inputs?}`: the default workflow with `spec` as its description, after the pre-run check (202 with `warnings`; 409 with `problems` when refused) |
+| `POST /repos/{repo}/clarity` | `{sources?, mode?: mixed\|auto}`: start a clarity run (202); `interactive` gives 422 |
+| `GET /repos/{repo}/clarity` | the same as `compose clarity status --json` |
+| `GET /repos/{repo}/clarity/questions` | the pending questions |
+| `POST /repos/{repo}/clarity/answers` | `{answers: {id: answer}, by, resume?}`: record answers, all or nothing (422 on any invalid one); resumes the paused clarity run when nothing it asked is pending. `{recorded, resumed_run}` |
+| `POST /repos/{repo}/clarity/validate` | start a `clarity-validate` run (202) |
+| `POST /repos/{repo}/clarity/merge` | retry merging a passing clarity branch: `{merged: true}`, or 409 with `pending_reason` |
 | `GET /costs?repo=&feature=&run=&group_by=&from=&to=` | totals grouped by `step`, `run`, `feature`, `repo` or `day` |
 
 Response bodies have the same shape as the matching CLI command's `--json` output.
