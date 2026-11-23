@@ -68,7 +68,7 @@ On Windows, install [Git for Windows](https://git-scm.com/download/win) first: w
 shell steps run under its `sh`. Or install by hand with uv:
 
 ```bash
-uv tool install /path/to/compose        # a local checkout
+uv tool install --reinstall /path/to/compose   # a local checkout (--reinstall picks up changes)
 uv tool install git+<repository-url>    # or straight from its git host
 ```
 

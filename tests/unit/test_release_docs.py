@@ -90,6 +90,6 @@ def test_install_scripts() -> None:
     assert "--source" in help_text and "set -eu" not in help_text
     for script in (sh, ps1):
         text = script.read_text()
-        assert "uv tool install --force --python" in text and "compose check" in text
+        assert "uv tool install --force --reinstall --python" in text and "compose check" in text
     readme = (ROOT / "README.md").read_text()
     assert "./install.sh" in readme and "install.ps1" in readme

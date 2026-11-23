@@ -74,7 +74,7 @@ if ! command -v uv >/dev/null 2>&1; then
 fi
 
 say "Installing compose from $TARGET ..."
-uv tool install --force --python "$PYTHON_VERSION" "$TARGET"
+uv tool install --force --reinstall --python "$PYTHON_VERSION" "$TARGET"
 
 BIN_DIR=$(uv tool dir --bin)
 case ":$PATH:" in

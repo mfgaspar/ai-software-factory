@@ -40,6 +40,11 @@ dev = [
 requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
+[tool.uv]
+# rebuild an installed copy when the source changes, not only pyproject.toml (the version
+# lives in src/compose/__init__.py, so without this `uv tool install` reuses a stale wheel)
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*" }]
+
 [tool.hatch.version]
 path = "src/compose/__init__.py"
 

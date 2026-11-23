@@ -81,7 +81,7 @@ if (-not (Test-Command "uv")) {
 }
 
 Write-Host "Installing compose from $Target ..."
-uv tool install --force --python $PythonVersion $Target
+uv tool install --force --reinstall --python $PythonVersion $Target
 if ($LASTEXITCODE -ne 0) { Fail "uv tool install failed" }
 
 $BinDir = (uv tool dir --bin).Trim()
