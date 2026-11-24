@@ -17,7 +17,10 @@ $ARGUMENTS
 1. Run `compose feature paths --json` and read `<feature_dir>/assessment.md` in full. If
    there is none, tell the user to run `/compose-bug-assess` first and stop. Its proposed
    fix, files to change, tests and risks are what you work to. Read the constitution at
-   `constitution_file` if it exists.
+   `constitution_file` if it exists. When it is a memory index (its first line is
+   `<!-- memory-index: … -->`), read the guide at
+   `.compose/templates/compose/clarity.md` and open the files the index lists for the
+   `implement` step: the fix keeps their binding rules.
 2. **Check before changing anything.** Restate in 3–6 bullets what you will change and
    where. If the verdict is `invalid`, stop: there is nothing to fix. If it is `likely
    valid, needs reproduction` with open questions, ask whether to go ahead; in a headless

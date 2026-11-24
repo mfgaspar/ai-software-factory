@@ -15,9 +15,7 @@ from compose.core import store
 from compose.core.db import Database
 from compose.core.home import Home
 from compose.core.models import (
-    Action,
     Feature,
-    FileChange,
     HookExec,
     Repo,
     Run,
@@ -26,7 +24,8 @@ from compose.core.models import (
 )
 from compose.runner.errors import InputError
 from compose.runner.state import RunFiles
-from compose.tracking import aggregate
+from compose.tracking import aggregate, journal
+from compose.tracking.journal import Action, FileChange
 
 
 class ViewError(Exception):
@@ -42,7 +41,7 @@ def get_run(db: Database, run_id: str) -> Run:
 
 def run_tree(db: Database, run_id: str) -> list[str]:
     """The run and all of its child runs, parents first."""
-    rows = db.conn.execute(
+    rows = db.execute(
         """
         WITH RECURSIVE tree(id, depth) AS (
             SELECT id, 0 FROM runs WHERE id = ?
@@ -266,7 +265,7 @@ def list_runs(
         where.append("status = ?")
         params.append(status.value)
     if since is not None:
-        where.append("julianday(created_at) >= julianday(?)")
+        where.append("created_at >= ?")
         params.append(aggregate.utc(since))
     order = "created_at DESC, id DESC" + (f" LIMIT {int(limit)}" if limit else "")
     runs = store.select(db, Run, " AND ".join(where), tuple(params), order)
@@ -320,7 +319,7 @@ def _change(c: FileChange) -> dict[str, Any]:
     }
 
 
-def trace(db: Database, run_id: str, step_id: str | None = None) -> dict[str, Any]:
+def trace(db: Database, home: Home, run_id: str, step_id: str | None = None) -> dict[str, Any]:
     """Every action per step execution, with each hook's own actions nested under it.
 
     Run-level hooks (``before_run``/``after_run``) are listed under ``run_hooks``.
@@ -330,9 +329,17 @@ def trace(db: Database, run_id: str, step_id: str | None = None) -> dict[str, An
     rows = step_execs(db, run.id, step_id)
     if step_id is not None and not rows:
         raise ViewError(f"Run {run.id} has no step {step_id!r}")
-    actions = store.select(db, Action, f"run_id IN ({_in(ids)})", tuple(ids), "run_id, seq")
-    changes = store.select(db, FileChange, f"run_id IN ({_in(ids)})", tuple(ids), "id")
     hooks = store.select(db, HookExec, f"run_id IN ({_in(ids)})", tuple(ids), "started_at, id")
+    actions: list[Action] = []
+    changes: list[FileChange] = []
+    for rid in ids:
+        files = RunFiles(home.run_dir(rid))
+        owners = ["run", *(r.id for r in rows if r.run_id == rid)]
+        owners += [h.id for h in hooks if h.run_id == rid]
+        actions += journal.read_actions(files, owners)
+        for r in rows:
+            if r.run_id == rid:
+                changes += journal.read_changes(files, r.id)
     steps = []
     for row in rows:
         own = [h for h in hooks if h.step_exec_id == row.id]
@@ -358,7 +365,7 @@ def trace(db: Database, run_id: str, step_id: str | None = None) -> dict[str, An
 # ---------------------------------------------------------------- changes
 
 
-def changes(db: Database, run_id: str, step_id: str | None = None) -> dict[str, Any]:
+def changes(db: Database, home: Home, run_id: str, step_id: str | None = None) -> dict[str, Any]:
     """Files and lines changed per step execution (only steps that changed something).
 
     Each step lists the files of its whole window, hooks included; ``hooks`` breaks out
@@ -369,7 +376,9 @@ def changes(db: Database, run_id: str, step_id: str | None = None) -> dict[str, 
     rows = step_execs(db, run.id, step_id)
     if step_id is not None and not rows:
         raise ViewError(f"Run {run.id} has no step {step_id!r}")
-    all_changes = store.select(db, FileChange, f"run_id IN ({_in(ids)})", tuple(ids), "id")
+    all_changes = [
+        c for r in rows for c in journal.read_changes(RunFiles(home.run_dir(r.run_id)), r.id)
+    ]
     hooks = {
         h.id: h for h in store.select(db, HookExec, f"run_id IN ({_in(ids)})", tuple(ids), "id")
     }
@@ -433,7 +442,7 @@ def cost(
     since: datetime | None = None,
     until: datetime | None = None,
 ) -> dict[str, Any]:
-    """Cost, tokens and changes grouped by step, run, feature, repo or day."""
+    """Cost, tokens and changes grouped by step, run, feature, repo, day or user."""
     if run_id is not None:
         get_run(db, run_id)
     filters: dict[str, Any] = {
@@ -464,17 +473,17 @@ def _labels(db: Database, by: str, keys: list[str | None]) -> dict[str, str]:
     if not present:
         return {}
     if by == "feature":
-        rows = db.conn.execute(
+        rows = db.execute(
             f"SELECT id, name FROM features WHERE id IN ({_in(present)})", present
         ).fetchall()
         return {r[0]: r[1] for r in rows}
     if by == "repo":
-        rows = db.conn.execute(
+        rows = db.execute(
             f"SELECT id, name FROM repos WHERE id IN ({_in(present)})", present
         ).fetchall()
         return {r[0]: r[1] for r in rows}
     if by == "run":
-        rows = db.conn.execute(
+        rows = db.execute(
             f"SELECT id, workflow_id FROM runs WHERE id IN ({_in(present)})", present
         ).fetchall()
         return {r[0]: f"{r[0]} ({r[1]})" for r in rows}

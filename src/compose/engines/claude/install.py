@@ -22,7 +22,7 @@ SKILL_PREFIXES = ("compose", "clarity")
 REFRESHED_TEMPLATES = {Path("clarity") / "manifest.yml"}
 
 
-def _planned(assets: Path) -> list[tuple[Path, Path, bool]]:
+def _planned(assets: Path, skills_dir: Path = SKILLS_DIR) -> list[tuple[Path, Path, bool]]:
     """(source, target relative to the repo, overwrite) for every installable file.
 
     Skills (compose's and the clarity family) are refreshed; templates are only added when
@@ -34,7 +34,7 @@ def _planned(assets: Path) -> list[tuple[Path, Path, bool]]:
     if skills.is_dir():
         for skill in sorted(p for p in skills.iterdir() if p.name.startswith(SKILL_PREFIXES)):
             for src in sorted(p for p in skill.rglob("*") if p.is_file()):
-                planned.append((src, SKILLS_DIR / skill.name / src.relative_to(skill), True))
+                planned.append((src, skills_dir / skill.name / src.relative_to(skill), True))
     templates = assets / "templates"
     if templates.is_dir():
         for src in sorted(p for p in templates.rglob("*") if p.is_file()):
@@ -48,11 +48,11 @@ def _tracked(path: Path, relative: Path) -> bool:
     return proc.returncode == 0
 
 
-def _exclude_patterns(written: list[Path]) -> list[str]:
+def _exclude_patterns(written: list[Path], skills_dir: Path = SKILLS_DIR) -> list[str]:
     patterns: set[str] = set()
     for rel in written:
-        if rel.parts[:2] == SKILLS_DIR.parts:
-            patterns.add(f"/{SKILLS_DIR.as_posix()}/{rel.parts[2]}/")
+        if rel.parts[: len(skills_dir.parts)] == skills_dir.parts:
+            patterns.add(f"/{skills_dir.as_posix()}/{rel.parts[len(skills_dir.parts)]}/")
         else:
             patterns.add(f"/{rel.as_posix()}")
     return sorted(patterns)
@@ -77,11 +77,17 @@ def _update_exclude(path: Path, patterns: list[str]) -> None:
     exclude.write_text("\n".join(lines) + "\n")
 
 
-def install(path: Path, *, worktree: bool = False, assets: Path = ASSETS) -> list[Path]:
-    """Install skills into ``<path>/.claude/skills`` and templates into
-    ``<path>/.compose/templates``; return the files written (absolute)."""
+def install(
+    path: Path,
+    *,
+    worktree: bool = False,
+    assets: Path = ASSETS,
+    skills_dir: Path = SKILLS_DIR,
+) -> list[Path]:
+    """Install skills into ``<path>/<skills_dir>`` (``.claude/skills`` by default) and
+    templates into ``<path>/.compose/templates``; return the files written (absolute)."""
     written: list[Path] = []
-    for src, rel, overwrite in _planned(assets):
+    for src, rel, overwrite in _planned(assets, skills_dir):
         target = path / rel
         if worktree and _tracked(path, rel):
             continue  # the repo's committed version wins
@@ -93,9 +99,9 @@ def install(path: Path, *, worktree: bool = False, assets: Path = ASSETS) -> lis
         shutil.copyfile(src, target)
         written.append(target)
     if worktree:
-        untracked = [rel for _, rel, _ in _planned(assets) if not _tracked(path, rel)]
+        untracked = [rel for _, rel, _ in _planned(assets, skills_dir) if not _tracked(path, rel)]
         if untracked:
-            _update_exclude(path, _exclude_patterns(untracked))
+            _update_exclude(path, _exclude_patterns(untracked, skills_dir))
     return written
 
 

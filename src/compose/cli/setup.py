@@ -7,6 +7,7 @@ from pathlib import Path
 import typer
 from rich.table import Table
 
+from compose import notify
 from compose.cli.common import console, handle_errors, open_store, print_json
 from compose.core.config import load_config
 from compose.engines.registry import default_registry
@@ -15,7 +16,9 @@ from compose.repos.setup import check_all, init_repo
 
 @handle_errors
 def init(
-    engine: str = typer.Option("claude", "--engine", help="Coding engine to set up."),
+    engine: str | None = typer.Option(
+        None, "--engine", help="Coding engine to set up (default: the configured one)."
+    ),
     path: Path = typer.Option(Path("."), "--path", help="Repository to initialize."),
     as_json: bool = typer.Option(False, "--json", help="Print JSON."),
 ) -> None:
@@ -24,7 +27,8 @@ def init(
     Nothing is committed; commit the listed files if you want them shared.
     """
     with open_store() as (home, db):
-        report = init_repo(db, home, path, default_registry(), engine)
+        name = engine or load_config(home).defaults.engine
+        report = init_repo(db, home, path, default_registry(), name)
     files = report.to_commit()
     if as_json:
         print_json(
@@ -43,6 +47,8 @@ def init(
             console.print(f"  {name}", highlight=False)
     else:
         console.print("Everything was already in place.")
+    if notify.enabled(load_config(home).notifications.enabled):
+        console.print(notify.setup_hint(), highlight=False)
     console.print("Next: [bold]compose check[/bold], then try [bold]/compose-specify[/bold].")
 
 

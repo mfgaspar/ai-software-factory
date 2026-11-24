@@ -38,6 +38,12 @@ def build(
         "--interactive/--no-interactive",
         help="Ask for missing inputs and gate decisions (default: when on a terminal).",
     ),
+    auto_approve: bool = typer.Option(
+        False,
+        "--auto-approve",
+        "-y",
+        help="Approve gates and confirmations automatically instead of waiting for a person.",
+    ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show each tool call."),
     as_json: bool = typer.Option(False, "--json", help=JSON_HELP),
 ) -> None:
@@ -48,7 +54,7 @@ def build(
     progress = None if as_json or detach else Progress(verbose)
     with open_store() as (home, db):
         target = registry.resolve_repo(db, repo, Path.cwd())
-        runner = _make_runner(db, home, interactive=ask, progress=progress)
+        runner = _make_runner(db, home, interactive=ask, progress=progress, auto_approve=auto_approve)
         loaded = loader.resolve(workflow or runner.config.defaults.workflow, Path(target.path))
         values = service.build_inputs(loaded.definition, description, values)
         created = runner.create_run(target, loaded, values, feature=feature)

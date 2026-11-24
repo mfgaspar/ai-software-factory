@@ -66,3 +66,18 @@ def test_add_outside_repo(
     monkeypatch.chdir(tmp_path)
     res = cli("workflow", "add", "x.yml")
     assert res.exit_code == 1 and "inside a git repo" in res.output
+
+
+def test_add_remove_user(
+    cli: Callable[..., Result], compose_home: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    src = tmp_path / "flow.yml"
+    src.write_text("workflow: {id: flow, name: F}\nsteps:\n  - {id: a, run: ls}\n")
+    monkeypatch.chdir(tmp_path)  # not a repo: --user works anywhere
+    assert cli("workflow", "add", str(src), "--user").exit_code == 0
+    assert (compose_home / "workflows/flow/workflow.yml").is_file()
+    listed = json.loads(cli("workflow", "list", "--json").output)
+    assert any(w["id"] == "flow" and w["source"] == "user" for w in listed)
+    assert json.loads(cli("workflow", "info", "flow", "--json").output)["source"] == "user"
+    assert cli("workflow", "remove", "flow", "--user").exit_code == 0
+    assert not (compose_home / "workflows/flow").exists()

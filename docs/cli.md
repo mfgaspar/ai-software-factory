@@ -8,8 +8,8 @@ current directory. `compose <command> --help` shows the same options.
 
 | command | what it does |
 |---|---|
-| `compose init [--engine claude] [--path .]` | install skills and templates, add a starter constitution and `.gitignore` entries, register the repo. Safe to run again; commits nothing |
-| `compose check [--engine claude]` | check git, the engine (installed, signed in) and the current repo; exits 1 if something required is missing, with how to fix it |
+| `compose init [--engine claude\|copilot] [--path .]` | install skills and templates (`.claude/skills/` for Claude Code, `.github/skills/` for Copilot), add a starter constitution and `.gitignore` entries, register the repo. Safe to run again; commits nothing |
+| `compose check [--engine claude\|copilot]` | check git, the engine (installed; for Claude Code also signed in) and the current repo; exits 1 if something required is missing, with how to fix it |
 
 ## Repos
 
@@ -35,11 +35,11 @@ branch plus `specs/NNN-name/` in your current checkout.
 
 | command | what it does |
 |---|---|
-| `compose workflow list` | built-in workflows and those in `.compose/workflows/` (a repo's copy shadows a built-in) |
+| `compose workflow list` | built-in workflows, yours in `$COMPOSE_HOME/workflows/`, and the repo's in `.compose/workflows/` (repo shadows user, user shadows built-in) |
 | `compose workflow info <id\|path>` | inputs, steps and the hooks that will run, tracking included |
 | `compose workflow validate <path>` | check a workflow without running it |
-| `compose workflow add <folder\|file\|url> [--force]` | install into `.compose/workflows/<id>/` |
-| `compose workflow remove <id>` | remove an installed workflow |
+| `compose workflow add <folder\|file\|url> [--force] [--user]` | install into `.compose/workflows/<id>/`, or `$COMPOSE_HOME/workflows/<id>/` with `--user` (works outside a repo) |
+| `compose workflow remove <id> [--user]` | remove an installed workflow |
 
 ## Runs
 
@@ -54,15 +54,34 @@ compose abort <run>
 - `-i name=value` sets an input; repeat it. `-i name=@file` reads the value from a file.
 - Without `--feature`, a run creates a new feature (named from `feature_name` or the first
   required text input) with its own branch and worktree.
-- In the foreground a run prints a line per step. Under a model step it also prints a
-  `✎ <path>` line for each file the model writes or edits, and the model's commentary as
-  `» …` lines. On a terminal a live line shows the step's time and spend (tokens until the
-  engine reports the cost). `-v` adds every other tool call with a hint (`· Read docs/a.md`).
+- When a feature run stops (completed, paused, failed or aborted) compose commits the
+  worktree on the feature branch (`<feature>: <workflow name>`, with the state when it
+  didn't complete; files ignored by git and the engines' own files stay out).
+- When a feature run **completes**, compose also fast-forwards the default branch to the
+  feature branch, so the work shows in the repo's own folder. It only fast-forwards: when
+  the default branch changed since the feature started, or your checkout has files the
+  merge would overwrite, nothing is merged, and compose prints the reason with the branch,
+  the worktree folder and the `git diff` and `git merge` commands to run yourself. Turn it
+  off with `features: {merge: false}` in the config. compose never pushes. A commit or
+  merge that fails leaves the run's outcome as it was.
+- In the foreground a run prints one line per step when the step ends, with its files,
+  time and cost (`✓ Draft the documents   7 files · 1m12s · $0.03`), and a closing line
+  with the run's totals. A step shows its `name` (its id when it has none); steps that only
+  arrange others (`if`, `do-while`…) and `quiet` steps are left out unless they fail. On a
+  terminal a live line shows the running step, its time, the files written so far, its
+  cost and the model's latest commentary. Claude reports the cost only when a step ends,
+  so until then the line shows an estimate from the tokens at the model's list price
+  (`~$0.12`). `-v` shows every step, a
+  `✎ <path>` line per file written, the commentary as `» …` lines and every other tool
+  call with a hint (`· Read docs/a.md`).
   On a terminal it asks for missing inputs and gate decisions; `--no-interactive` pauses at
   gates.
+- The foreground output names the coding engine and model when a step first uses them, and
+  again whenever they change (`⚙ Engine: copilot (gpt-5)`). `--json` and `--detach` print
+  nothing; the `engine_started` event carries `engine` and `model`.
 - **Notifications**: compose sends a desktop notification when a run waits for answers or a
   gate decision, completes or fails, in the foreground, detached or through the API. It uses
-  `osascript` on macOS, `notify-send` on Linux and a PowerShell toast on Windows. Turn it off
+  `osascript` on macOS, `notify-send` on Linux and a PowerShell toast on Windows. `compose init` prints what to allow in the system settings the first time (macOS: "Script Editor" under System Settings > Notifications). Turn it off
   with `notifications: {enabled: false}` in the config, or `COMPOSE_NOTIFY=0`.
 - `--detach` runs in a background process and returns the run id at once. Its output goes
   to `~/.compose/runs/<run>/process.log`.
@@ -93,18 +112,18 @@ compose clarity answer ID ANSWER [--by NAME] [--no-resume] [--repo r] [-d] [-v]
 compose clarity validate [--repo r] [-d] [-v]
 compose clarity merge [--repo r]
 compose build DESCRIPTION [--workflow id] [-i name=value ...] [--feature NNN-name] [--repo r]
-              [-d] [--interactive/--no-interactive] [-v]
+              [-d] [--auto-approve/-y] [--interactive/--no-interactive] [-v]
 ```
 
 | command | what it does |
 |---|---|
-| `compose clarity [SOURCES…]` | start a clarity run on the `clarity` branch, from the given paths or URLs. `--mode` is `mixed` (default: draft, then ask and apply up to 4 rounds), `auto` (draft only, never asks) or `interactive` (Claude Code attached to this terminal, then a tracked validate). On a terminal a mixed run asks its questions there; with `-d` or `--no-interactive` it pauses for answers. A source named like a subcommand needs `./` (`compose clarity ./status`); `compose clarity start --help` lists the options |
+| `compose clarity [SOURCES…]` | start a clarity run on the `clarity` branch, from the given paths or URLs. `--mode` is `mixed` (default: draft, then ask and apply up to 4 rounds), `auto` (draft only, never asks) or `interactive` (Claude Code, or Copilot when it is the default engine, attached to this terminal, then a tracked validate). On a terminal a mixed run asks its questions there; with `-d` or `--no-interactive` it pauses for answers. A source named like a subcommand needs `./` (`compose clarity ./status`); `compose clarity start --help` lists the options |
 | `compose clarity status` | each document's status, the verdict and whether it's current, the pending questions, whether the constitution is current, the active clarity run, and whether `compose build` would start. No model call |
 | `compose clarity questions` | the pending questions in the order they're asked: id, kind, document, question, options (with the approver) and recommendation |
 | `compose clarity answer ID ANSWER` | record an answer in the questions file. `--by` defaults to the git user name (an approval needs its approver). Resumes the paused clarity run once nothing it asked is pending, unless `--no-resume`; `-d` resumes it in the background |
-| `compose clarity validate` | run `/clarity-validate` as a tracked run: records the verdict; on PASS regenerates an out-of-date constitution, commits and merges. Exits 1 on FAIL |
+| `compose clarity validate` | run `/clarity-validate` as a tracked run: records the verdict; on PASS publishes the foundation to `.compose/memory/`, commits and merges. Exits 1 on FAIL |
 | `compose clarity merge` | retry merging a passing `clarity` branch into the default branch. Exits 1 while the merge is pending, with the reason |
-| `compose build DESCRIPTION` | run the default workflow (or `--workflow`) on a new feature (or `--feature`) with DESCRIPTION as its spec, after the pre-run check. A refusal exits 1 with each problem and its fix; warnings go to stderr and under `warnings` in the JSON. `-i` sets other inputs, as in `compose run` |
+| `compose build DESCRIPTION` | run the default workflow (or `--workflow`) on a new feature (or `--feature`) with DESCRIPTION as its spec, after the pre-run check. A refusal exits 1 with each problem and its fix; warnings go to stderr and under `warnings` in the JSON. `-i` sets other inputs, as in `compose run`. `--auto-approve` (`-y`) takes `approve` (or `install`, as at the skills gate) at every gate that has a `reject` option, printing `✓ auto-approved: <gate message> → <choice>` for each, and says yes to hook confirmations, so the run doesn't wait for a person there (clarity questions still wait for their approver) |
 
 Every one takes `--json`. Exit codes of runs started here are those of `compose run` (0
 completed or detached, 1 failed or aborted, 3 paused).
@@ -114,18 +133,35 @@ completed or detached, 1 failed or aborted, 3 paused).
 ```bash
 compose trace <run> [--step id] [--full]
 compose changes <run> [--step id]
-compose cost [--run r | --feature f | --repo r | --all] [--by step|run|feature|repo|day]
+compose cost [--run r | --feature f | --repo r | --all] [--by step|run|feature|repo|day|user]
              [--since 2026-11-01] [--until 2026-12-01]
 ```
 
-- `trace`: each step's messages, tool calls and results, with each hook's own actions under
-  it. Long values are cut to one line unless `--full`. The built-in tracking hooks show only
-  in `--json`.
+`--by user` groups by who started the run: the git user name, else the OS user, recorded
+when the run is created. A run started before that was recorded shows as `unknown`.
+
+- `trace`: each step's messages, tool calls and results (from
+  `steps/<exec id>.actions.jsonl`), with each hook's own actions under
+  it, cut to one line each, and the path of each engine step's transcript. `--full` reads the
+  transcripts instead: the prompt compose sent, the session (id, model, permission mode,
+  Claude Code version), the model's thinking and messages, every tool call with its whole
+  input and result (subagents marked `↳`), permission refusals and the final result. With
+  `--json`, `--full` adds each transcript's entries under `transcript_entries`. The built-in
+  tracking hooks show only in `--json`.
+- **Transcripts**: every engine execution (step or hook) keeps its whole session in
+  `~/.compose/runs/<run>/steps/<exec id>.transcript.jsonl`. The first line (`compose_task`)
+  is what compose asked: prompt, folder, permission mode, allowed tools and, for the `cli`
+  transport, the command line. Every line after it is Claude Code's `stream-json` output,
+  exactly as printed (the `sdk` transport writes its messages in the same shape), and a
+  last `compose_stderr` line holds what Claude Code wrote to stderr. Lines are written as
+  they arrive, so an aborted or killed step keeps what it did. compose never deletes them.
 - `changes`: files and lines per step, counting everything in the step's window (its hooks
-  too); `--json` also breaks out what each hook changed.
+  too); `--json` also breaks out what each hook changed. Read from
+  `~/.compose/runs/<run>/steps/<exec id>.changes.jsonl`.
 - `cost`: cost, tokens (input, output, cache read, cache write), files and lines, grouped.
-  Defaults to the current repo and `--by run` (or `--by step` with `--run`). A file changed
-  by two steps counts once in a total. Called workflows count toward the run that called
+  Defaults to the current repo and `--by run` (or `--by step` with `--run`). Files and lines
+  are summed from each step's own totals, so a file changed by two steps counts in both.
+  Called workflows count toward the run that called
   them.
 
 ## Server
@@ -143,13 +179,19 @@ See [api.md](api.md). Set `server.token` in `~/.compose/config.yml` (or
 
 ```yaml
 defaults:
-  engine: claude
+  engine: claude             # or copilot: every step without its own or its workflow's `engine`;
+                             # init and check use it when --engine is not given
   model: claude-sonnet-5-5   # used when a workflow or step names none
   workflow: automated        # what compose run and compose build start when none is named
 clarity:
   branch: clarity            # the branch (and worktree) clarity runs work on
+features:
+  merge: true                # a completed feature run fast-forwards the default branch to it
 notifications:
   enabled: true              # desktop notifications (COMPOSE_NOTIFY=0 also turns them off)
+telemetry:
+  enabled: false             # export runs as OpenTelemetry traces and metrics (see below)
+  service_name: compose
 server:
   host: 127.0.0.1
   port: 8765
@@ -157,8 +199,29 @@ server:
 engines:                     # default engine_options per engine
   claude:
     transport: cli           # cli (claude -p, stream-json) or sdk (Claude Agent SDK)
+  copilot:
+    permission_mode: allow-all  # allow-all (default), assisted or rules
 ```
 
 Inside a run, steps and hooks see `COMPOSE_RUN_ID`, `COMPOSE_REPO`, `COMPOSE_SCOPE`
 (`feature`, or `repo` for clarity runs), `COMPOSE_FEATURE` (feature runs only) and
 `COMPOSE_WORKFLOW_DIR`.
+
+### OpenTelemetry
+
+Set `telemetry: {enabled: true}` and install the extra (`pip install 'compose-sdd[otel]'`) to
+export runs over OTLP/HTTP. Where they go is set by the standard environment variables
+(`OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS`…). With the SDK missing,
+compose logs a warning and exports nothing.
+
+- **Traces**: one trace per root run (child `workflow` steps nest under their parent). Spans
+  are `run <workflow>` and `<type> <step id>`, written when they end with their recorded start
+  and end, so a run that paused at a gate and resumed later (even in another process) is one
+  trace, and a step that waited at a gate is one span covering the wait. Attributes:
+  `compose.run_id`, `compose.workflow`, `compose.step_id`, `compose.step_type`,
+  `compose.status`, `compose.cost_usd`, `gen_ai.system` (the engine), `gen_ai.request.model`,
+  `gen_ai.usage.*_tokens` and `enduser.id` (who started the run). Failed and aborted steps
+  and runs have error status. Hooks are not exported yet.
+- **Metrics**: counters `compose.cost` (USD), `compose.tokens` (by `gen_ai.token.type`),
+  `compose.steps` and `compose.runs`, by workflow, repo, engine, model and user.
+- Prompts, tool calls and file contents are never exported.

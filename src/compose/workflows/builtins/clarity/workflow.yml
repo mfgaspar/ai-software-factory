@@ -2,11 +2,11 @@ schema_version: "1.0"
 workflow:
   id: clarity
   name: Clarity foundation
-  version: 1.0.0
+  version: 1.1.0
   scope: repo
   description: >
     Drafts the clarity foundation from the sources, asks and applies the questions it
-    raises (mixed mode, up to 4 rounds), regenerates the constitution from it, validates,
+    raises (mixed mode, up to 4 rounds), publishes it to .compose/memory/, validates,
     commits on the clarity branch and, on PASS, fast-forwards the default branch.
 inputs:
   sources:
@@ -22,6 +22,7 @@ inputs:
       leaves its questions in .clarity/questions.yml for later.
 steps:
   - id: draft
+    name: Draft the documents
     command: clarity
     input:
       args: "{{ inputs.sources }} draft"
@@ -42,9 +43,11 @@ steps:
         condition: "{{ steps.count.output.holding > 0 }}"
         steps:
           - id: questions
+            name: Your answers
             type: questions
             file: .clarity/questions.yml
           - id: apply
+            name: Apply your answers
             command: clarity
             input:
               args: apply
@@ -52,34 +55,34 @@ steps:
             engine_options:
               allowed_tools: ["Bash(awk:*)", "Bash(git hash-object:*)"]
           - id: count
+            quiet: true
             type: questions
             file: .clarity/questions.yml
             ask: false
 
-  - id: constitution
-    command: compose-constitution
-    input:
-      args: from-clarity
-    engine_options:
-      # the body-hash command from the clarity manifest, which headless steps must run
-      allowed_tools: ["Bash(awk:*)", "Bash(git hash-object:*)"]
-  - id: stamp
+  # copies the documents to .compose/memory/ and writes its index (no model call)
+  - id: memory
+    name: Publish the memory files
     type: clarity
-    action: stamp-constitution
+    action: publish-memory
 
   - id: validate
+    name: Validate the documents
     command: clarity-validate
     engine_options:
       # the body-hash command from the clarity manifest, which headless steps must run
       allowed_tools: ["Bash(awk:*)", "Bash(git hash-object:*)"]
   - id: verdict
+    quiet: true
     type: clarity
     action: record-verdict
     from_step: validate
 
   - id: commit
+    name: Commit on the clarity branch
     type: clarity
     action: commit
   - id: merge
+    quiet: true
     type: clarity
     action: merge

@@ -1,22 +1,111 @@
 # Clarity project config. This file belongs to the project: commit it, edit it, and it is
 # never overwritten by an install. It is applied on top of the shipped manifest
-# (.compose/templates/clarity/manifest.yml). /clarity-configure writes and updates it.
+# (.compose/templates/clarity/manifest.yml). /clarity-configure writes and updates it, and
+# keeps these comments in place.
 #
-# Every key is optional; an empty file means "use the shipped defaults".
+# Every key is optional; an empty file means "use the shipped defaults": ask which
+# documents to include, and require every shipped document except the optional ones
+# unless told otherwise.
+#
+# The shipped documents, by path under .clarity/:
+#   goal/problem.md                 the problem, who has it, scope and success criteria
+#   goal/stakeholders.md            who is affected and who decides
+#   goal/requirements.md            non-functional requirements, constraints and standards
+#   goal/open-questions.md          questions still to settle
+#   solution/solution.md            the chosen solution and the alternatives considered
+#   failures/failures.md            what can go wrong and how each failure is handled
+#   failures/fmea.md                optional: an FMEA worksheet built from the failures
+#   solution/architecture.md        components, stack and structural rules
+#   decisions/index.md              the list of decision records (ADRs)
+#   product/prd.md                  product requirements
+#   product/ux-standards.md         UI conventions
+#   contracts/api.md                API conventions and the published API
+#   data/data-model.md              entities, storage and data rules
+#   ops/setup-guide.md              how to install, run and test the project
+#   solution/solution-summary.md    a short summary of the solution
+#   summary.md                      a one-page summary of the whole foundation
+# goal/problem.md and goal/requirements.md are always required.
 
-# Make optional or custom documents required, or stop requiring shipped ones.
-# goal/problem.md and goal/requirements.md can never be removed.
+# ---------------------------------------------------------------------------------------
+# setup: how the list of required documents is decided.
+#
+#   dynamic (default)  /clarity asks a person first, before anything is treated as agreed:
+#                      it lists every document, included or left out, and the person
+#                      confirms or changes the list. A brief or other source only shapes
+#                      what is proposed; it never counts as the answer. The agreed list is
+#                      then written below (mandatory, not_applicable), so later runs don't
+#                      ask again unless compose ships a new document.
+#   static             /clarity asks nothing about the setup. It follows this file exactly
+#                      as written. Use it when the list is decided up front, for example
+#                      from a team template, or in a pipeline with nobody to answer.
+#
+# setup: dynamic
+
+# ---------------------------------------------------------------------------------------
+# mandatory: change which documents are required.
+#   remove  stop requiring shipped documents. They are not created and not checked.
+#   add     require an optional shipped document (failures/fmea.md) or a custom document
+#           (declared under `documents` below).
+#
+# Example: a small command-line tool. No UI, no API and no stored data, so those
+# documents are not written at all.
+# mandatory:
+#   remove:
+#     - product/ux-standards.md
+#     - contracts/api.md
+#     - data/data-model.md
+#
+# Example: the smallest possible foundation, only the problem and the requirements.
+# mandatory:
+#   remove:
+#     - goal/stakeholders.md
+#     - goal/open-questions.md
+#     - solution/solution.md
+#     - failures/failures.md
+#     - solution/architecture.md
+#     - decisions/index.md
+#     - product/prd.md
+#     - product/ux-standards.md
+#     - contracts/api.md
+#     - data/data-model.md
+#     - ops/setup-guide.md
+#     - solution/solution-summary.md
+#     - summary.md
+#
+# Example: a regulated product that must show a Failure Mode and Effects Analysis.
+# mandatory:
+#   add: [failures/fmea.md]
+#
+# Example: a service that also needs a runbook (a custom document, see `documents`).
 # mandatory:
 #   add: [ops/runbook.md]
 #   remove: [product/ux-standards.md]
 
-# Documents that don't apply to this project, decided up front, each with its reason.
+# ---------------------------------------------------------------------------------------
+# not_applicable: documents that don't apply to this project, each with its reason.
+# Unlike `mandatory.remove`, the decision is recorded: the reason is shown in the summary
+# and listed for feature work under "Not applicable" in .compose/memory/constitution.md.
+# Use it when someone may later ask "why is there no data model?".
+#
 # not_applicable:
 #   data/data-model.md: "Stateless service, no persistence"
+#   product/ux-standards.md: "Back-end service with no user interface"
 
-# Project-specific documents. Each needs a template (put it under .clarity/templates/),
-# its required headings and what it depends on. produced_by: clarity means /clarity drafts
-# it itself; walk_after places it in the order.
+# ---------------------------------------------------------------------------------------
+# documents: project-specific documents. Each needs:
+#   template           a Markdown template, kept under .clarity/templates/
+#   required_sections  the headings the document must have to count as complete
+#   depends_on         documents it builds on (a change there marks this one stale)
+#   produced_by        the skill that writes it; `clarity` means /clarity drafts it itself
+#   walk_after         where it comes in the order
+#   memory             what feature work is told about it. compose publishes the document
+#                      to .compose/memory/ and lists it in the index
+#                      (.compose/memory/constitution.md) with this summary. read_at names
+#                      the steps that always open it (specify, clarify, plan, tasks,
+#                      implement, analyze); read_when is a condition, in plain words, for
+#                      the other steps.
+# Add the path to `mandatory.add` to require it.
+#
 # documents:
 #   ops/runbook.md:
 #     template: .clarity/templates/runbook.md
@@ -24,14 +113,35 @@
 #     depends_on: [solution/architecture.md]
 #     produced_by: clarity
 #     walk_after: ops/setup-guide.md
+#     memory:
+#       summary: "Alerts, on-call steps and how to roll back a release."
+#       read_at: [tasks, analyze]
+#       read_when: "the feature changes how the application is deployed or operated"
 
-# Who must sign off which document. Names are recorded as typed (an honor system).
-# A glob covers several documents; decisions/* covers every ADR.
+# ---------------------------------------------------------------------------------------
+# fmea: options for failures/fmea.md (used only when `mandatory.add` includes it).
+#   scores  false (default): each row carries the severity from the failure documents
+#           (Critical, High, Medium, Low) and nothing is multiplied.
+#           true: each row is also scored 1-10 for severity, occurrence and detection, with
+#           the risk priority number (their product), for audits that expect the classic
+#           table. A person must confirm the occurrence and detection scores.
+#
+# fmea:
+#   scores: false
+
+# ---------------------------------------------------------------------------------------
+# approvals: who must sign off which document. Names are recorded as typed (an honor
+# system). A glob covers several documents; decisions/* covers every ADR. Leave it out
+# when no sign-off is needed.
+#
 # approvals:
 #   product/prd.md: [Ana Silva]
-#   solution/architecture.md: [Rui Costa]
+#   solution/architecture.md: [Rui Costa, Marta Dias]   # both must approve
 #   decisions/*: [Rui Costa]
 
-# true: a stale document (an upstream document changed since it was confirmed) fails
-# /clarity-validate. false (default): it is reported as a warning.
+# ---------------------------------------------------------------------------------------
+# stale_fails: a document is stale when a document it depends on changed after it was
+# confirmed. true: a stale document fails /clarity-validate. false (default): it is
+# reported as a warning.
+#
 # stale_fails: false

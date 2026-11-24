@@ -30,5 +30,6 @@ class EngineRegistry:
 def default_registry() -> EngineRegistry:
     """Engines shipped with compose."""
     from compose.engines.claude.adapter import ClaudeEngine
+    from compose.engines.copilot.adapter import CopilotEngine
 
-    return EngineRegistry({"claude": ClaudeEngine()})
+    return EngineRegistry({"claude": ClaudeEngine(), "copilot": CopilotEngine()})

@@ -14,11 +14,12 @@ import os
 from collections import deque
 from collections.abc import AsyncIterator
 from contextlib import suppress
+from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions
 
 from compose.core import procs
-from compose.engines.base import EngineEvent, EngineResult
+from compose.engines.base import EngineEvent, EngineResult, Transcript
 from compose.engines.claude import install as installer
 from compose.engines.claude.mapping import EventMapper
 from compose.engines.registry import EngineError
@@ -60,6 +61,24 @@ def build_command(options: ClaudeAgentOptions) -> list[str]:
     return argv
 
 
+def task_entry(
+    prompt: str, options: ClaudeAgentOptions, transport: str, argv: list[str] | None = None
+) -> dict[str, Any]:
+    """The transcript's first line: what compose asked, where and how. Claude Code's own
+    output doesn't repeat the prompt."""
+    return {
+        "type": "compose_task",
+        "transport": transport,
+        "prompt": prompt,
+        "cwd": str(options.cwd),
+        "permission_mode": options.permission_mode,
+        "model": options.model,
+        "allowed_tools": list(options.allowed_tools),
+        "disallowed_tools": list(options.disallowed_tools),
+        **({"argv": argv} if argv is not None else {}),
+    }
+
+
 def build_env(options: ClaudeAgentOptions) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if k not in DROPPED_ENV}
     env.update({k: str(v) for k, v in dict(options.env).items()})
@@ -69,9 +88,12 @@ def build_env(options: ClaudeAgentOptions) -> dict[str, str]:
 class ClaudeCliRun:
     """One ``claude -p`` process for one task."""
 
-    def __init__(self, prompt: str, options: ClaudeAgentOptions) -> None:
+    def __init__(
+        self, prompt: str, options: ClaudeAgentOptions, transcript: Transcript | None = None
+    ) -> None:
         self.prompt = prompt
         self.options = options
+        self.transcript = transcript or Transcript(None)
         self.argv = build_command(options)
         self.mapper = EventMapper()
         self._proc: asyncio.subprocess.Process | None = None
@@ -104,6 +126,7 @@ class ClaudeCliRun:
             self._result = self.mapper.unfinished("failed", f"cannot start {self.argv[0]}: {exc}")
             return
         self._proc = proc
+        self.transcript.write(task_entry(self.prompt, self.options, "cli", self.argv))
         assert proc.stdin and proc.stdout and proc.stderr
         stderr = asyncio.create_task(self._drain(proc.stderr))
         try:
@@ -115,6 +138,7 @@ class ClaudeCliRun:
                 line = raw.strip()
                 if not line:
                     continue
+                self.transcript.write_raw(line.decode(errors="replace"))  # exactly as printed
                 try:
                     data = json.loads(line)
                 except json.JSONDecodeError:
@@ -133,6 +157,8 @@ class ClaudeCliRun:
         finally:
             await self._terminate()
             stderr.cancel()
+            if self._stderr:
+                self.transcript.write({"type": "compose_stderr", "lines": list(self._stderr)})
 
     async def stop(self) -> None:
         self._stopped = True

@@ -70,14 +70,24 @@ built only to produce a finding. The prototype is disposable; the finding is wha
    - **New questions:** add them to `open-questions.md` with all their fields.
    - If the finding changes the problem or requirements, update those documents too.
 
-## Unattended (`auto`)
+## Questions
 
-When `/clarity` passes `auto`, or no person is present, ask nothing. Draft from the sources,
-the code and the other documents. Leave each gap as a `[TBD — <what's missing or
-conflicting>]` note, and propose any N/A only as a note. Never set `status: complete` or
-`n/a`, and never write `reviewed` hashes. Return the draft and its list of gaps.
+Ask a person only what a person must answer: their intent and priorities, facts only they
+hold (real users, numbers, deadlines, owners), a trade-off the material leaves open that is
+theirs to own, a conflict the sources can't settle, and confirmations. Anything you can work
+out from the sources, the code, the other `.clarity/` documents, earlier answers or
+established practice, decide yourself: write it, mark it as inferred with where it came
+from, and name it in your summary so the person can correct it. `/clarity` sets this out in
+**Ask a person only what needs a person**.
 
-In `auto`, don't build anything: write the prototype plan into the question's Findings and leave the question open.
+## Unattended
+
+`/clarity` doesn't run this skill in its `auto`, `draft` and `apply` phases: it asks a person
+about each blocking question instead. If you are run with `auto`, with `COMPOSE_RUN_ID` set
+or with no person present, ask nothing and build nothing. Write the experiment (hypothesis,
+success and failure results, what to build) into the question's Findings, leave the question
+open, and return it as a gap. Never resolve a question, set `status: complete` or write
+`reviewed` hashes.
 
 ## Finish
 
@@ -100,5 +110,3 @@ In `auto`, don't build anything: write the prototype plan into the question's Fi
 - **Moving the goalposts** or **skipping the failure criteria**: decide what failure looks like
   before building.
 - **Prototyping what you could think through.** Only prototype genuinely empirical questions.
-
-Adapted from microsoft/clarity-agent (discovery-prototype.md), MIT License — see LICENSE.txt.

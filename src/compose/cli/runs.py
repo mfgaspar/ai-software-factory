@@ -8,9 +8,14 @@ Exit codes of ``run`` and ``resume``: 0 completed (or detached), 1 failed or abo
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import re
 import subprocess
 import sys
+import textwrap
+import time
+from collections import deque
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
@@ -27,16 +32,17 @@ from rich.tree import Tree
 from compose import notify
 from compose.clarity.questions import Question
 from compose.cli.common import console, err_console, handle_errors, open_store, print_json
-from compose.core import procs
+from compose.core import procs, store
 from compose.core.config import load_config
 from compose.core.db import Database
 from compose.core.home import Home
-from compose.core.models import Repo, Run, RunStatus
+from compose.core.models import Feature, Repo, Run, RunStatus
 from compose.engines.registry import EngineRegistry, default_registry
-from compose.repos import registry
+from compose.repos import git, registry
 from compose.runner.recovery import recover_stale_runs
 from compose.runner.runner import Interaction, Runner
-from compose.tracking import views
+from compose.runner.state import RunFiles
+from compose.tracking import transcripts, views
 from compose.tracking.aggregate import GroupBy
 from compose.workflows.schema import InputSpec
 
@@ -118,10 +124,21 @@ def styled(status: str) -> Text:
 
 
 def _interaction(
-    interactive: bool, progress: Progress | None = None, *, notifications: bool = True
+    interactive: bool,
+    progress: Progress | None = None,
+    *,
+    notifications: bool = True,
+    auto_approve: bool = False,
 ) -> Interaction:
+    def announce(message: str, choice: str) -> None:
+        if progress is None:  # --json and detached runs print nothing
+            return
+        line = f"[green]✓[/green] auto-approved: {_first_line(message)} → {choice}"
+        progress.console.print(line, highlight=False)
+
+    on_auto = announce if auto_approve else None
     if not interactive:
-        return Interaction()
+        return Interaction(auto_approve=auto_approve, on_auto_approve=on_auto)
     asked_at: list[str | None] = [None]  # the questions step last notified about
 
     def ask_with_notice(q: Question) -> str:
@@ -129,7 +146,9 @@ def _interaction(
         if step is None or step != asked_at[0]:
             asked_at[0] = step
             notify.notify(f"waiting for your answers ({q.id})", configured=notifications)
-        return ask_question(q)
+        if progress is not None:
+            progress.asked += 1
+        return ask_question(q, progress.console if progress is not None else None)
 
     def paused(ask: Callable[..., Any]) -> Callable[..., Any]:
         def call(*args: Any) -> Any:
@@ -152,6 +171,8 @@ def _interaction(
 
     return Interaction(
         interactive=True,
+        auto_approve=auto_approve,
+        on_auto_approve=on_auto,
         ask_input=paused(ask_input),
         ask_gate=paused(ask_gate),
         ask_confirm=paused(ask_confirm),
@@ -159,28 +180,58 @@ def _interaction(
     )
 
 
+_RECOMMENDED_MARK = re.compile(r"\s*\(recommended\)\s*$", re.IGNORECASE)
+
+
+def _option_text(option: str) -> str:
+    """An option as shown: without the "(recommended)" a skill may already have written
+    into it, since the list marks the recommendation itself."""
+    return _RECOMMENDED_MARK.sub("", option)
+
+
 def _answer_hint(q: Question) -> str:
     own = q.free_text and q.kind != "approval"
-    choices = "a number, your own words" if own else "a number"
-    if q.recommended:
-        return f"Answer: {choices}, or Enter for {q.recommended!r}"
-    return f"Answer: {choices}, or Enter to leave it for later"
+    choices = "number or your own words" if own else "number"
+    if q.recommended in q.options:
+        default = str(q.options.index(q.recommended) + 1)
+    elif q.recommended:
+        default = "the recommendation"
+    else:
+        default = "later"
+    return f"Answer ({choices}, Enter = {default})"
 
 
-def ask_question(q: Question) -> str:
+def _hanging(
+    out: Console, marker: str, text: str, style: str = "", tail: Text | None = None
+) -> None:
+    """``marker text``, a long text wrapping under its own start, not under the marker."""
+    indent = " " * (len(marker) + 1)
+    width = max(out.width - len(indent), 20)
+    lines = textwrap.wrap(text, width) or [""]
+    body = Text(f"{marker} ")
+    for i, line in enumerate(lines):
+        body.append(("" if i == 0 else f"\n{indent}") + line, style=style)
+    if tail is not None:
+        body.append_text(tail)
+    out.print(body, highlight=False, soft_wrap=True)
+
+
+def ask_question(q: Question, out: Console | None = None) -> str:
     """Show a question: its headline, supporting details, numbered options and
     recommendation. Enter takes the recommendation (or leaves the question for later when
     there's none); free-text questions take the person's own words too."""
-    where = f" {q.document}" if q.document else ""
-    console.print(f"[yellow]?[/yellow] [bold]{q.id}[/bold] [dim]{q.kind}{where}[/dim]")
-    console.print(q.question, highlight=False, soft_wrap=True)
+    out = out or console
+    where = [q.kind, q.document] if q.document else [q.kind]
+    out.print()
+    out.print(Text.assemble(("? ", "yellow"), (q.id, "bold"), (f"  {' · '.join(where)}", "dim")))
+    _hanging(out, " ", q.question, "bold")
     for detail in q.details:
-        console.print(f"  • {detail}", highlight=False, soft_wrap=True)
+        _hanging(out, "   •", detail, "dim")
     for number, option in enumerate(q.options, 1):
-        mark = " [green](recommended)[/green]" if option == q.recommended else ""
-        console.print(f"  {number}. {escape(option)}{mark}", highlight=False)
+        mark = Text("  recommended", style="green") if option == q.recommended else None
+        _hanging(out, f"  {number:>2}.", _option_text(option), tail=mark)
     if q.recommended and q.recommended not in q.options:
-        console.print(f"  Recommended: {q.recommended}", highlight=False)
+        _hanging(out, "    ", f"Recommended: {q.recommended}", "green")
     while True:
         text = str(typer.prompt(_answer_hint(q), default="", show_default=False)).strip()
         if not text:
@@ -189,12 +240,23 @@ def ask_question(q: Question) -> str:
             return q.options[int(text) - 1]
         if q.free_text and q.kind != "approval" or text in q.options:
             return text
-        console.print("[red]Choose one of the numbered options.[/red]")
+        out.print("[red]Choose one of the numbered options.[/red]")
 
 
-WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit"})
+# tools that write a file: Claude Code's, then Copilot's
+WRITE_TOOLS = frozenset({"Write", "Edit", "MultiEdit", "NotebookEdit", "create", "edit"})
+PATH_KEYS = ("file_path", "notebook_path", "path")
 ENGINE_STEPS = frozenset({"command", "prompt"})
-HINT_KEYS = ("file_path", "notebook_path", "path", "pattern", "command", "url", "query")
+HINT_KEYS = (
+    "file_path",
+    "notebook_path",
+    "path",
+    "pattern",
+    "command",
+    "url",
+    "query",
+    "description",
+)
 
 
 def _first_line(text: str) -> str:
@@ -205,50 +267,123 @@ def _clip_to(text: str, width: int) -> str:
     return text if len(text) <= width else text[: max(width - 1, 1)] + "…"
 
 
-def _count(n: int) -> str:
-    if n >= 1_000_000:
-        return f"{n / 1_000_000:.1f}M"
-    return f"{n / 1000:.1f}k" if n >= 1000 else str(n)
+def short_money(value: float) -> str:
+    """A cost as people read it while a run goes: ``$0.03``, ``<$0.01``."""
+    return f"${value:.2f}" if value >= 0.01 else "<$0.01"
+
+
+# Steps that only arrange other steps: their children are what a person follows.
+CONTROL_STEPS = frozenset({"if", "switch", "while", "do-while", "fan-out", "workflow"})
+LONG_STEPS = ENGINE_STEPS | {"shell"}
+RECENT_LINES = 5  # how many of the latest actions the live area shows
+SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+_ROUND = re.compile(r"#(\d+)/[^/]*$")
+LABEL_WIDTH = 34
+
+
+def step_label(event: dict[str, Any]) -> str:
+    """The step's ``name`` (its id when it has none), with the loop round it runs in:
+    ``Apply your answers (round 2)``."""
+    label = str(event.get("name") or event.get("step_id") or "")
+    found = _ROUND.search(str(event.get("key") or ""))
+    return f"{label} (round {found.group(1)})" if found else label
+
+
+class _Step:
+    def __init__(self, event: dict[str, Any], depth: int, shown: bool) -> None:
+        self.label = step_label(event)
+        self.kind = str(event.get("step_type") or "")
+        self.depth = depth
+        self.shown = shown
+        self.started = time.monotonic()
+        self.files: set[str] = set()
+        self.asked = 0
+
+
+ACTION_WORD = re.compile(r"^([A-Za-z][\w-]*)(:?)(?=\s|$)")
+
+
+def _action_note(note: str) -> Text:
+    """One line of what the agent is doing, with its action word highlighted: ``Writing``,
+    ``Read``, ``Bash``, ``thinking:``, ``Subagent:``. A failure stays red, and a message
+    keeps its plain italic."""
+    if note.startswith("✗"):
+        return Text(note, style="red")
+    match = ACTION_WORD.match(note)
+    if match is None or note.startswith("»"):
+        return Text(note, style="dim italic")
+    word = match.group(1).lower()
+    action = Text(match.group(0), style="bold")
+    return Text.assemble(action, (note[match.end():], "dim italic"))
 
 
 class _StatusLine:
-    """The transient ``<step> · 2m14s · 1.2k out · 48.0k in`` line under a running model
-    step. Claude reports the cost only when a step ends, so until then it shows tokens:
-    written (out) and read (in), cached context included, since that is most of what the
-    model reads each turn."""
+    """The transient line under a running step: a spinner, the step, its time, the turn,
+    the files written and its cost, then the last few things the agent did, one per line:
+    ``⠹ Draft the documents · 2m14s · turn 9 · 3 files · ~$0.12``. Claude reports the cost
+    only when a step ends, so until then it's an estimate from the tokens at list price,
+    marked ``~``."""
 
-    def __init__(self) -> None:
-        self.step = ""
-        self.started = 0.0
+    def __init__(self, label: str = "", width: int = 80) -> None:
+        self.step = label
+        self.width = width
+        self.started = time.monotonic()
         self.cost = 0.0
-        self.tokens_in = 0
-        self.tokens_out = 0
+        self.estimate = 0.0
+        self.files = 0
+        self.turns = 0
+        self.recent: deque[str] = deque(maxlen=RECENT_LINES)
+
+    @property
+    def note(self) -> str:
+        return self.recent[-1] if self.recent else ""
+
+    @note.setter
+    def note(self, text: str) -> None:
+        """Add what the agent just did; the live area keeps the last few."""
+        if text and text != self.note:
+            self.recent.append(text)
 
     def __rich__(self) -> Text:
-        import time
-
-        elapsed = duration(int((time.monotonic() - self.started) * 1000))
-        parts = [self.step, elapsed]
+        elapsed = time.monotonic() - self.started
+        frame = SPINNER[int(elapsed * 8) % len(SPINNER)]
+        parts = [duration(int(elapsed * 1000))]
+        if self.turns:
+            parts.append(f"turn {self.turns + 1}")
+        if self.files:
+            parts.append(f"{self.files} file{'' if self.files == 1 else 's'}")
         if self.cost:
-            parts.append(money(self.cost))
-        elif self.tokens_in or self.tokens_out:
-            parts.append(f"{_count(self.tokens_out)} out · {_count(self.tokens_in)} in")
-        return Text(" · ".join(parts), style="dim")
+            parts.append(short_money(self.cost))
+        elif self.estimate:
+            parts.append("~" + short_money(self.estimate))
+        line = Text.assemble((frame, "cyan"), " ", self.step, (f" · {' · '.join(parts)}", "dim"))
+        for note in self.recent:
+            line.append("\n  ")
+            line.append_text(_action_note(_clip_to(note, max(self.width - 4, 12))))
+        return line
 
 
 class Progress:
-    """Prints a line per step as a foreground run goes and, under a running model step, the
-    files it writes, its commentary and (in a terminal) a live time and cost line. With
-    ``verbose``, every other tool call too."""
+    """What a foreground run prints as it goes.
+
+    By default, one line per step a person cares about, written when the step ends
+    (``✓ Draft the documents   7 files · 1m12s · $0.03``); steps that only arrange others
+    (``if``, ``do-while``…) and steps marked ``quiet`` stay out of it unless they fail. On a
+    terminal a live line shows the running step and the model's latest commentary. With
+    ``verbose``, every step, the files written, the commentary and every other tool call.
+    """
 
     def __init__(self, verbose: bool, out: Console | None = None) -> None:
         self.verbose = verbose
         self.out = out
-        self.depth: dict[str, int] = {}
+        self.steps: dict[str, _Step] = {}
         self.workdir: Path | None = None
         self.status = _StatusLine()
         self.live: Live | None = None
+        self.calls: dict[str, str] = {}  # tool call id -> tool name, to name a failure
         self.current_step: str | None = None  # exec id of the step started last
+        self._engine_shown: str | None = None
+        self.asked = 0  # questions asked inline; the questions step's summary counts them
 
     @property
     def console(self) -> Console:
@@ -256,16 +391,12 @@ class Progress:
 
     # ------------------------------------------------------------------ status line
 
-    def _start_status(self, step: str) -> None:
-        import time
-
+    def _start_status(self, step: _Step) -> None:
         if not self.console.is_terminal:
             return
         self.pause()
-        self.status = _StatusLine()
-        self.status.step = step
-        self.status.started = time.monotonic()
-        self.live = Live(self.status, console=self.console, transient=True, refresh_per_second=2)
+        self.status = _StatusLine(step.label, self.console.width)
+        self.live = Live(self.status, console=self.console, transient=True, refresh_per_second=8)
         self.live.start()
 
     def pause(self) -> None:
@@ -276,9 +407,9 @@ class Progress:
 
     close = pause
 
-    # ------------------------------------------------------------------ events
+    # ------------------------------------------------------------------ helpers
 
-    def _print(self, text: str) -> None:
+    def _print(self, text: str | Text) -> None:
         self.console.print(text, highlight=False)
 
     def _relative(self, path: str) -> str:
@@ -289,82 +420,189 @@ class Progress:
                 pass
         return path
 
+    def _pad(self, step: _Step | None, extra: int = 0) -> str:
+        return "  " * ((step.depth if step and self.verbose else 0) + extra)
+
+    def _summary(self, step: _Step, event: dict[str, Any]) -> str:
+        parts: list[str] = []
+        if step.kind == "questions" and step.asked:
+            parts.append(f"{step.asked} answered")
+        if step.files:
+            parts.append(f"{len(step.files)} file{'' if len(step.files) == 1 else 's'}")
+        elapsed = time.monotonic() - step.started
+        if step.kind in LONG_STEPS or elapsed >= 1:
+            parts.append(duration(int(elapsed * 1000)))
+        if event.get("cost_usd"):
+            parts.append(short_money(float(event["cost_usd"])))
+        return " · ".join(parts)
+
+    # ------------------------------------------------------------------ events
+
     def _engine_event(self, event: dict[str, Any]) -> None:
         inner = event.get("event") or {}
-        pad = "  " * (self.depth.get(event.get("exec_id") or "", 0) + 1)
+        step = self.steps.get(event.get("exec_id") or "")
+        pad = self._pad(step, 1)
         kind = inner.get("kind")
         width = max(self.console.width - len(pad) - 2, 20)
         if kind == "tool_call":
             name = str(inner.get("name") or "")
+            self.calls[str(inner.get("call_id") or "")] = name
             args = inner.get("input") or {}
             if name in WRITE_TOOLS:
-                path = args.get("file_path") or args.get("notebook_path") or ""
-                self._print(f"{pad}[green]✎[/green] {escape(self._relative(str(path)))}")
-            elif self.verbose:
+                path = self._relative(next((str(args[k]) for k in PATH_KEYS if args.get(k)), ""))
+                new = step is None or path not in step.files
+                if step is not None:
+                    step.files.add(path)
+                    self.status.files = len(step.files)
+                self.status.note = f"Writing {path}"
+                if self.verbose and new:
+                    self._print(f"{pad}[green]✎[/green] {escape(path)}")
+            else:
                 hint = next((str(args[k]) for k in HINT_KEYS if args.get(k)), "")
-                if hint and ("file_path" in args or "notebook_path" in args or "path" in args):
+                if hint and any(k in args for k in PATH_KEYS):
                     hint = self._relative(hint)
-                shown = _clip_to(f"{name} {_first_line(hint)}".strip(), width)
-                self._print(f"{pad}[dim]· {escape(shown)}[/dim]")
+                if name == "task":  # a subagent started
+                    shown = _clip_to(f"Subagent: {_first_line(hint) or 'working'}", width)
+                else:
+                    shown = _clip_to(f"{name} {_first_line(hint)}".strip(), width)
+                self.status.note = shown  # what the agent is doing now, never a stale line
+                if self.verbose:
+                    self._print(f"{pad}[dim]· {escape(shown)}[/dim]")
         elif kind == "message":
             line = _first_line(str(inner.get("text") or ""))
+            if line and not line.startswith("|"):  # a table row says nothing on its own
+                self.status.note = line.strip("*_` ")
+                if self.verbose:
+                    self._print(f"{pad}[dim]» {escape(_clip_to(line, width))}[/dim]")
+        elif kind == "thinking":
+            line = _first_line(str(inner.get("text") or "")).strip("*_` ")
             if line:
-                self._print(f"{pad}[dim]» {escape(_clip_to(line, width))}[/dim]")
+                self.status.note = f"thinking: {line}"
+                if self.verbose:
+                    self._print(f"{pad}[dim italic]~ {escape(_clip_to(line, width))}[/dim italic]")
+        elif kind == "tool_result" and inner.get("is_error"):
+            name = self.calls.get(str(inner.get("call_id") or ""), "tool")
+            why = _clip_to(_first_line(str(inner.get("output") or "")) or "failed", width - 12)
+            self.status.note = f"✗ {name}: {why}"
+            if self.live is not None:  # print above the live line
+                self.live.console.print(
+                    f"{pad}[red]✗[/red] [dim]{escape(name)}: {escape(why)}[/dim]"
+                )
+            else:
+                self._print(f"{pad}[red]✗[/red] [dim]{escape(name)}: {escape(why)}[/dim]")
         elif kind == "usage_update":
             usage = inner.get("usage") or {}
+            self.status.turns = int(usage.get("turns") or 0)
             self.status.cost = float(usage.get("cost_usd") or 0)
-            self.status.tokens_out = int(usage.get("output_tokens") or 0)
-            self.status.tokens_in = sum(
-                int(usage.get(key) or 0)
-                for key in ("input_tokens", "cache_read_tokens", "cache_write_tokens")
-            )
+            self.status.estimate = float(usage.get("estimated_cost_usd") or 0)
+
+    def _step_started(self, event: dict[str, Any]) -> None:
+        parent = self.steps.get(event.get("parent_exec_id") or "")
+        depth = parent.depth + 1 if parent is not None else 0
+        kind = str(event.get("step_type") or "")
+        shown = self.verbose or not (kind in CONTROL_STEPS or event.get("quiet"))
+        step = _Step(event, depth, shown)
+        self.steps[str(event.get("exec_id") or "")] = step
+        self.current_step = event.get("exec_id")
+        if self.verbose:
+            self._print(f"{self._pad(step)}[cyan]▸[/cyan] {escape(step.label)} [dim]{kind}[/dim]")
+        elif shown and kind in LONG_STEPS and not self.console.is_terminal:
+            self._print(f"[cyan]▸[/cyan] {escape(step.label)}")  # a log shows what's running
+        if shown and kind not in CONTROL_STEPS | {"gate", "questions"}:
+            self._start_status(step)
+        self.asked = 0
+
+    def _step_finished(self, event: dict[str, Any]) -> None:
+        self.pause()
+        step = self.steps.get(str(event.get("exec_id") or "")) or _Step(event, 0, True)
+        if step.kind == "questions":
+            step.asked = self.asked
+        status = str(event.get("status"))
+        failed = status in ("failed", "aborted")
+        if not (step.shown or failed) or (status == "skipped" and not self.verbose):
+            return
+        asked_none = step.kind == "questions" and status == "completed" and not step.asked
+        if asked_none and not self.verbose:
+            return  # nothing was asked: nothing to report
+        if step.asked:
+            self._print("")  # after the questions, before the run goes on
+        style = STATUS_STYLE.get(status, "")
+        line = Text(self._pad(step))
+        line.append(SYMBOL.get(status, "·"), style=style)
+        line.append(f" {step.label}")
+        summary = self._summary(step, event)
+        if summary:
+            line.append(" " * max(LABEL_WIDTH - len(step.label), 1) + summary, style="dim")
+        if status not in ("completed", "paused") or self.verbose:
+            line.append(f"  {status}", style=style)
+        if event.get("error") and status != "paused":
+            line.append(f"  {event['error']}", style="red")
+        self._print(line)
+
+    def _engine_started(self, event: dict[str, Any]) -> None:
+        """Say which coding engine (and model) works, whenever it changes."""
+        engine = event.get("engine")
+        if not engine:
+            return
+        model = event.get("model")
+        label = f"{engine} ({model})" if model else str(engine)
+        if label == self._engine_shown:
+            return
+        self._engine_shown = label
+        self._print(Text.assemble(("⚙ Engine: ", "dim"), (label, "bold")))
 
     def __call__(self, event: dict[str, Any]) -> None:
         kind = event.get("type")
-        if kind == "run_started" and event.get("worktree") and self.workdir is None:
-            self.workdir = Path(str(event["worktree"])).resolve()
+        if kind == "run_started" and not event.get("parent_run_id"):
+            if event.get("worktree") and self.workdir is None:
+                self.workdir = Path(str(event["worktree"])).resolve()
+            title = str(event.get("workflow") or "Run")
+            target = event.get("feature")
+            self._print(
+                Text.assemble(
+                    (title, "bold"),
+                    (f" · {target}" if target else "", ""),
+                    (f"  {event.get('run_id') or ''}", "dim"),
+                )
+            )
+            self._print("")
         elif kind == "step_started":
-            parent = event.get("parent_exec_id")
-            depth = self.depth[parent] + 1 if parent in self.depth else 0
-            self.depth[event.get("exec_id", "")] = depth
-            self.current_step = event.get("exec_id")
-            name = event.get("key") or event.get("step_id")
-            self._print(
-                f"{'  ' * depth}[cyan]▸[/cyan] {name} [dim]{event.get('step_type') or ''}[/dim]"
-            )
-            if event.get("step_type") in ENGINE_STEPS:
-                self._start_status(str(name))
+            self._step_started(event)
         elif kind == "step_finished":
-            self.pause()
-            status = str(event.get("status"))
-            pad = "  " * self.depth.get(event.get("exec_id", ""), 0)
-            cost = event.get("cost_usd") or 0
-            extra = f" [dim]{money(cost)}[/dim]" if cost else ""
-            shown = event.get("error") and status != "paused"
-            error = f" [red]{escape(str(event['error']))}[/red]" if shown else ""
-            style = STATUS_STYLE.get(status, "")
-            self._print(
-                f"{pad}[{style}]{SYMBOL.get(status, '·')}[/{style}] {event.get('step_id')}"
-                f" [{style}]{status}[/{style}]{extra}{error}"
-            )
+            self._step_finished(event)
         elif kind == "engine_event":
             self._engine_event(event)
+        elif kind == "engine_started":
+            self._engine_started(event)
         elif kind == "gate_waiting":
             self.pause()
+            options = "/".join(event.get("options") or [])
             self._print(
-                f"[yellow]⏸ waiting at gate {event.get('step_id')}:[/yellow]"
-                f" {escape(str(event.get('message')))} ({'/'.join(event.get('options') or [])})"
+                f"[yellow]⏸[/yellow] Waiting for your decision at {event.get('step_id')}:"
+                f" {escape(str(event.get('message')))} [dim]({options})[/dim]"
+            )
+        elif kind in ("feature_commit_failed", "clarity_commit_failed"):
+            self.pause()
+            self._print(
+                f"[yellow]warning:[/yellow] could not commit the work:"
+                f" {escape(str(event.get('error')))}"
             )
         elif kind == "questions_waiting":
             self.pause()
+            ids = event.get("ids") or []
             self._print(
-                f"[yellow]⏸ waiting for answers at {event.get('step_id')}:[/yellow]"
-                f" {', '.join(event.get('ids') or [])}"
+                f"[yellow]⏸[/yellow] {len(ids)} question{'' if len(ids) == 1 else 's'}"
+                f" waiting for your answers [dim]({', '.join(ids)})[/dim]"
             )
 
 
 def _make_runner(
-    db: Database, home: Home, *, interactive: bool, progress: Progress | None
+    db: Database,
+    home: Home,
+    *,
+    interactive: bool,
+    progress: Progress | None,
+    auto_approve: bool = False,
 ) -> Runner:
     recover_stale_runs(db, home)
     config = load_config(home)
@@ -372,7 +610,12 @@ def _make_runner(
         db,
         home,
         engines=engine_registry(),
-        interaction=_interaction(interactive, progress, notifications=config.notifications.enabled),
+        interaction=_interaction(
+            interactive,
+            progress,
+            notifications=config.notifications.enabled,
+            auto_approve=auto_approve,
+        ),
         on_event=progress,
         config=config,
     )
@@ -429,6 +672,7 @@ def _finish(
         print_json(detail)
     else:
         _print_outcome(detail)
+        _print_where(db, home, run_id)
     override = after(detail) if after else None
     raise typer.Exit(override if override is not None else EXIT_CODES.get(status, 0))
 
@@ -462,28 +706,87 @@ def follow(
                 highlight=False,
             )
         return
-    if progress is not None:
-        on = views.run_brief(db, created)["feature"] or "clarity"
-        console.print(
-            f"Run [bold]{created.id}[/bold]: {created.workflow_id} on {on}",
-            highlight=False,
-        )
     run_foreground(runner, created.id, progress)
     _finish(db, home, created.id, as_json, warnings=warnings, after=after)
+
+
+def _shown_path(path: Path) -> str:
+    """A path as short as it can be: relative to here, or from ``~``."""
+    for base, prefix in ((Path.cwd(), ""), (Path.home(), "~/")):
+        try:
+            return prefix + str(path.resolve().relative_to(base.resolve())) or "."
+        except ValueError:
+            continue
+    return str(path)
+
+
+def _print_where(db: Database, home: Home, run_id: str) -> None:
+    """Where a feature run left its work: merged into the default branch, or on its branch
+    with the git commands to review and merge it."""
+    run = views.get_run(db, run_id)
+    if run.feature_id is None or run.parent_run_id is not None:
+        return
+    feature = store.get(db, Feature, run.feature_id)
+    repo = store.get(db, Repo, run.repo_id)
+    if feature is None or repo is None or not feature.worktree_path:
+        return
+    repo_dir, worktree = Path(repo.path), Path(feature.worktree_path)
+    try:
+        base = repo.default_branch or git.default_branch(repo_dir)
+        ahead = int(git.git(repo_dir, "rev-list", "--count", f"{base}..{feature.branch}"))
+        loose = git.changed_paths(worktree) if worktree.is_dir() else []
+    except (git.GitError, ValueError):
+        return
+    events = {e.get("type"): e for e in RunFiles(home.run_dir(run_id)).read_events()}
+    if "feature_merged" in events and not ahead and not loose:
+        console.print(
+            f"The work is merged into [bold]{base}[/bold], in {escape(_shown_path(repo_dir))}"
+            f" (branch {feature.branch}).",
+            highlight=False,
+        )
+        return
+    if not ahead and not loose:
+        console.print(f"No changes on branch [bold]{feature.branch}[/bold].", highlight=False)
+        return
+    state = f"{ahead} commit{'' if ahead == 1 else 's'} ahead of {base}"
+    if loose:
+        state += f", {len(loose)} uncommitted file{'' if len(loose) == 1 else 's'}"
+    rows = [("Files", _shown_path(worktree))]
+    if ahead:
+        target = _shown_path(repo_dir)
+        rows.append(("Review", f"git -C {target} diff {base}...{feature.branch}"))
+        if run.status is RunStatus.COMPLETED:
+            rows.append(("Merge", f"git -C {target} merge {feature.branch}"))
+    console.print(
+        f"The work is on branch [bold]{feature.branch}[/bold] ({state}).", highlight=False
+    )
+    for label, value in rows:
+        console.print(f"  [dim]{label + ':':<8}[/dim] {escape(value)}", highlight=False)
+    pending = events.get("feature_merge_pending")
+    if pending and ahead:
+        console.print(
+            f"  Not merged into {base}: {escape(str(pending.get('reason')))}.", highlight=False
+        )
 
 
 def _print_outcome(detail: dict[str, Any]) -> None:
     status = detail["status"]
     totals = detail["totals"]
     changes = totals["changes"]
+    parts = []
+    started, ended = detail.get("started_at"), detail.get("ended_at")
+    if isinstance(started, datetime) and isinstance(ended, datetime):
+        parts.append(f"in {duration(int((ended - started).total_seconds() * 1000))}")
+    parts.append(short_money(totals["cost_usd"]))
+    if changes["files"]:
+        files = f"{changes['files']} file{'' if changes['files'] == 1 else 's'} changed"
+        parts.append(f"{files} (+{changes['added']} -{changes['removed']})")
+    style = STATUS_STYLE.get(status, "")
+    console.print()
     console.print(
         Text.assemble(
-            "Run ",
-            (detail["id"], "bold"),
-            " ",
-            styled(status),
-            f"  {money(totals['cost_usd'])}, {changes['files']} files"
-            f" +{changes['added']} -{changes['removed']}",
+            (f"{SYMBOL.get(status, '·')} Run {status}", f"bold {style}"),
+            f"  {' · '.join(parts)}",
         )
     )
     if detail.get("waiting") and detail["waiting"].get("questions") is not None:
@@ -746,19 +1049,26 @@ def _print_detail(detail: dict[str, Any]) -> None:
 def trace(
     run_id: str = typer.Argument(..., help="Run id."),
     step: str | None = typer.Option(None, "--step", help="Only this step id."),
-    full: bool = typer.Option(False, "--full", help="Show whole tool inputs and results."),
+    full: bool = typer.Option(
+        False,
+        "--full",
+        help="Everything the engine did, from each step's transcript file: the prompt,"
+        " thinking, messages, whole tool inputs and results, refusals and the result.",
+    ),
     as_json: bool = typer.Option(False, "--json", help=JSON_HELP),
 ) -> None:
-    """Every action of each step (messages, tool calls, results), hooks nested."""
-    with open_store() as (_, db):
-        data = views.trace(db, run_id, step)
+    """Every action of each step (messages, tool calls, results), hooks nested. Each engine
+    step's whole session is kept in runs/<run>/steps/<exec id>.transcript.jsonl."""
+    with open_store() as (home, db):
+        data = views.trace(db, home, run_id, step)
+    _attach_transcripts(home, data, full)
     if as_json:
         print_json(data)
         return
     width = None if full else 100
     root = Tree(f"[bold]{data['run_id']}[/bold] {data['status']}")
     for hook in data["run_hooks"]:
-        _hook_node(root, hook, width)
+        _hook_node(root, hook, width, full)
     for s in data["steps"]:
         label = Text.assemble((_step_name(s), "bold"), f" {s['type']} ", styled(s["status"]))
         if s["cost_usd"]:
@@ -766,13 +1076,101 @@ def trace(
         node = root.add(label)
         before = [h for h in s["hooks"] if h["event"].startswith("before")]
         for hook in before:
-            _hook_node(node, hook, width)
-        for action in s["actions"]:
-            node.add(_action_text(action, width))
+            _hook_node(node, hook, width, full)
+        _actions(node, s, width, full)
         for hook in s["hooks"]:
             if hook not in before:
-                _hook_node(node, hook, width)
+                _hook_node(node, hook, width, full)
     console.print(root)
+
+
+def _attach_transcripts(home: Home, data: dict[str, Any], full: bool) -> None:
+    """Add each execution's transcript file (when it has one) and, with ``full``, what's
+    in it, to the trace."""
+
+    def attach(item: dict[str, Any], run: str, exec_id: str) -> None:
+        file = transcripts.path(home, run, exec_id)
+        item["transcript"] = str(file) if file.is_file() else None
+        if full and item["transcript"]:
+            item["transcript_entries"] = transcripts.entries(file)
+
+    for s in data["steps"]:
+        attach(s, s["run_id"], s["exec_id"])
+        for hook in s["hooks"]:
+            attach(hook, s["run_id"], hook["hook_exec_id"])
+    for hook in data["run_hooks"]:
+        attach(hook, data["run_id"], hook["hook_exec_id"])
+
+
+def _actions(node: Tree, item: dict[str, Any], width: int | None, full: bool) -> None:
+    if full and item.get("transcript_entries"):
+        for entry in item["transcript_entries"]:
+            shown = _entry_text(entry)
+            if shown is not None:
+                node.add(shown)
+    else:
+        for action in item["actions"]:
+            node.add(_action_text(action, width))
+    if item.get("transcript"):
+        node.add(Text(f"transcript: {_shown_path(Path(item['transcript']))}", style="dim"))
+
+
+def _block(text: object) -> str:
+    return text if isinstance(text, str) else json.dumps(text, indent=2, default=str)
+
+
+def _entry_text(entry: dict[str, Any]) -> Text | None:
+    """One transcript entry, whole. Claude Code's hook bookkeeping is left to --json."""
+    kind = entry["kind"]
+    sub = "↳ " if entry.get("parent") else ""  # inside a subagent
+    if kind == "task":
+        tools = ", ".join(entry.get("allowed_tools") or []) or "none"
+        return Text.assemble(
+            ("task ", "magenta"),
+            f"{entry.get('transport')} · permission {entry.get('permission_mode')}"
+            f" · allowed {tools} · {entry.get('cwd')}\n",
+            (_block(entry.get("prompt")), "bold"),
+        )
+    if kind == "session":
+        parts = [f"session {entry.get('session_id')}"]
+        if entry.get("model"):
+            parts.append(str(entry["model"]))
+        if entry.get("permission_mode"):
+            parts.append(f"permission {entry['permission_mode']}")
+        if entry.get("copilot_version"):
+            parts.append(f"Copilot {entry['copilot_version']}")
+        else:
+            parts.append(f"Claude Code {entry.get('claude_code_version')}")
+        return Text(" · ".join(parts), style="magenta")
+    if kind == "thinking":
+        return Text(f"{sub}thinking: {entry.get('text') or ''}", style="dim italic")
+    if kind == "message":
+        style = "" if entry.get("role") == "assistant" else "cyan"
+        return Text(f"{sub}{entry.get('text') or ''}", style=style)
+    if kind == "tool_call":
+        return Text.assemble(
+            (f"{sub}→ ", "cyan"),
+            (str(entry.get("name")), "bold"),
+            " ",
+            (_block(entry.get("input")), "dim"),
+        )
+    if kind == "tool_result":
+        style = "red" if entry.get("is_error") else "dim"
+        return Text.assemble((f"{sub}← ", style), (_block(entry.get("output")), style))
+    if kind == "result":
+        line = Text.assemble(
+            ("result ", "red" if entry.get("is_error") else "green"),
+            f"{entry.get('subtype')} · {entry.get('turns')} turns",
+            f" · {money(float(entry['cost_usd']))}" if entry.get("cost_usd") else "",
+        )
+        for denial in entry.get("permission_denials") or []:
+            line.append(f"\nrefused: {_block(denial)}", style="yellow")
+        for error in entry.get("errors") or []:
+            line.append(f"\nerror: {_block(error)}", style="red")
+        return line
+    if kind in ("stderr", "raw", "error"):
+        return Text(f"{kind}: {entry.get('text')}", style="red")
+    return None  # system bookkeeping (hooks, status); kept in the file and in --json
 
 
 def _clip(text: str | None, width: int | None) -> str:
@@ -797,7 +1195,7 @@ def _action_text(action: dict[str, Any], width: int | None) -> Text:
     return Text(f"{kind} {_clip(action['input'] or action['result'], width)}")
 
 
-def _hook_node(parent: Tree, hook: dict[str, Any], width: int | None) -> None:
+def _hook_node(parent: Tree, hook: dict[str, Any], width: int | None, full: bool) -> None:
     if hook["kind"] == "builtin" and hook["status"] != "failed":
         return  # tracking itself; shown in --json
     label = Text.assemble(
@@ -808,8 +1206,7 @@ def _hook_node(parent: Tree, hook: dict[str, Any], width: int | None) -> None:
     if hook["error"]:
         label.append(f" {hook['error']}", style="red")
     node = parent.add(label)
-    for action in hook["actions"]:
-        node.add(_action_text(action, width))
+    _actions(node, hook, width, full)
 
 
 @handle_errors
@@ -819,8 +1216,8 @@ def changes(
     as_json: bool = typer.Option(False, "--json", help=JSON_HELP),
 ) -> None:
     """Files and lines each step changed."""
-    with open_store() as (_, db):
-        data = views.changes(db, run_id, step)
+    with open_store() as (home, db):
+        data = views.changes(db, home, run_id, step)
     if as_json:
         print_json(data)
         return
@@ -849,7 +1246,9 @@ def cost(
     feature: str | None = typer.Option(None, "--feature", help="Only this feature."),
     run_id: str | None = typer.Option(None, "--run", help="Only this run (with child runs)."),
     by: str = typer.Option(
-        "", "--by", help="Group by step, run, feature, repo or day (default: run, or step)."
+        "",
+        "--by",
+        help="Group by step, run, feature, repo, day or user (default: run, or step).",
     ),
     since: str | None = typer.Option(None, "--since", help="From this date/time (UTC)."),
     until: str | None = typer.Option(None, "--until", help="Before this date/time (UTC)."),
@@ -858,8 +1257,8 @@ def cost(
 ) -> None:
     """Cost, tokens and changes, grouped and filtered."""
     group = by or ("step" if run_id else "run")
-    if group not in ("step", "run", "feature", "repo", "day"):
-        raise typer.BadParameter("use step, run, feature, repo or day", param_hint="--by")
+    if group not in ("step", "run", "feature", "repo", "day", "user"):
+        raise typer.BadParameter("use step, run, feature, repo, day or user", param_hint="--by")
     start, end = parse_time(since, "--since"), parse_time(until, "--until")
     with open_store() as (_, db):
         target = None

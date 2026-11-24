@@ -233,6 +233,21 @@ def test_a_recommended_option_split_at_its_commas_is_joined_back(tmp_path: Path)
     assert saved["options"] == q7.options  # the repair is saved with the next answer
 
 
+def test_a_written_in_recommended_label_is_dropped(tmp_path: Path) -> None:
+    """Seen in a run: options shown as "Confirm it (recommended) (recommended)"."""
+    path = _write(
+        tmp_path,
+        _q(
+            "Q-1",
+            options=["Confirm it (recommended)", "Change it", "Other (Recommended) (recommended)"],
+            recommended="Confirm it (recommended)",
+        ),
+    )
+    (q,) = questions.load(path)
+    assert q.options == ["Confirm it", "Change it", "Other"]
+    assert q.recommended == "Confirm it"
+
+
 def test_an_invalid_question_says_to_quote(tmp_path: Path) -> None:
     path = _write(tmp_path, _q("Q-1", options=[{"a": 1}]))
     with pytest.raises(InputError, match="double quotes"):

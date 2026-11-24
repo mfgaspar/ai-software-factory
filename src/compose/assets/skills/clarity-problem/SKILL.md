@@ -79,7 +79,9 @@ you go.
    (non-functional requirements), what limits the solution must live within (constraints), and
    which engineering standards apply (coding, testing, security, review). Each one is testable
    or checkable, necessary ("what happens without it?") and traceable to a stakeholder or
-   problem aspect.
+   problem aspect. Sweep every category, see **Covering the requirements**: these rules are
+   what each feature is built and reviewed against, and a missing one gets decided again,
+   differently, in every feature.
 7. **Discovery check.** Are there fundamental unknowns that would change the solution approach?
    Signs: many solution paths hinging on unknown facts, "it depends on whether X" with nobody
    knowing X, stakeholders disagreeing about facts rather than priorities. Most projects pass
@@ -98,6 +100,27 @@ you go.
     that make a smart friend care (what's broken, a spark of the idea, why it matters). No
     bullet specs. Show it, adjust the tone, then write it with `status: draft`.
     `clarity-message` refines and confirms it later.
+
+### Covering the requirements
+
+Go through each category below. For each one, write the rule, or raise the gap, or leave it
+out because it truly doesn't matter here. Don't skip a category because the sources are
+silent: silence is where features later disagree.
+
+- **Non-functional requirements**: performance and capacity, reliability and data loss,
+  security (what input is untrusted, what must never leak or run), privacy, accessibility,
+  compatibility (browsers, devices, versions), operability, maintainability.
+- **Constraints**: the stack and what may or may not be added to it (languages, frameworks,
+  dependencies, build steps), where it runs, what it may talk to, time, budget and team.
+- **Standards**: how code is written and structured, what is tested, at which level and with
+  which tool, how security is handled in code, what a review checks, what is documented.
+
+A rule the sources imply but don't state still gets written, marked as inferred, so a person
+can correct it: a page that shows text people typed needs a rule that the text is never run
+as markup. A rule nobody has chosen ("no accessibility standard for now") is not a
+requirement: leave it out and record the choice in `.clarity/notes.md`. When the project's
+setup has no solution or architecture document, the constraints and standards here are all
+a feature gets: put the stack and the structural rules here.
 
 ### Fuzzy criteria
 
@@ -159,10 +182,14 @@ For a question with strategy `thinking`:
 
 Fill each template's sections and remove every placeholder (`[TBD…]`, `[To be determined…]`
 and the other bracketed prompts) from what you fill. Keep the HTML comments only where they
-still help. Synthesize: ten minutes of talk is still two paragraphs.
+still help. Synthesize: ten minutes of talk is still two paragraphs. Don't transcribe a
+source either: a brief repeated in other words adds nothing. Write what it implies and what
+it leaves out, and keep remarks about the process ("not yet examined with the user") out of
+the documents: they go in `.clarity/notes.md` or in a question.
 
-- `goal/problem.md`: the problem and its context, why it matters, scope in and out, checkable
-  success criteria.
+- `goal/problem.md`: the problem and its context, why it matters (what the workaround costs
+  and who pays), scope in and out, and the success criteria as a list, one per line, each
+  saying how it is checked.
 - `goal/stakeholders.md`: one subsection per stakeholder with type, engagement,
   characteristics, goals and concerns, in the template's shape. Dual stakeholders get one
   subsection per persona.
@@ -182,12 +209,35 @@ clearly don't fit the project, propose N/A with the evidence; on the user's agre
 `status: n/a` and a `reason:`. Never decide N/A alone. For open questions, "none found" is
 usually better than N/A.
 
-## Unattended (`auto`)
+## Questions
 
-When `/clarity` passes `auto`, or no person is present, ask nothing. Draft from the sources,
-the code and the other documents. Leave each gap as a `[TBD — <what's missing or
-conflicting>]` note, and propose any N/A only as a note. Never set `status: complete` or
-`n/a`, and never write `reviewed` hashes. Return the draft and its list of gaps.
+Ask a person only what a person must answer: their intent and priorities, facts only they
+hold (real users, numbers, deadlines, owners), a trade-off the material leaves open that is
+theirs to own, a conflict the sources can't settle, and confirmations. Anything you can work
+out from the sources, the code, the other `.clarity/` documents, earlier answers or
+established practice, decide yourself: write it, mark it as inferred with where it came
+from, and name it in your summary so the person can correct it. `/clarity` sets this out in
+**Ask a person only what needs a person**.
+
+## Unattended
+
+`/clarity` runs this skill unattended in its `auto`, `draft` and `apply` phases, and passes
+`auto`. Work the same way whenever `COMPOSE_RUN_ID` is set or no person is present. Ask
+nothing. Draft from the sources, the code and the other documents, drafts included. Fill
+what you can work out yourself (see **Questions**), marked as inferred, and leave a
+`[TBD — <what's missing or conflicting>]` note only for what a person must answer, in the
+section it belongs to,
+and propose any N/A only as a note. Never set `status: complete` or `n/a`, and never write
+`reviewed` hashes. Return the draft and its list of gaps: `/clarity` turns them into
+questions for a person.
+
+Do the thinking of steps 1–9 yourself, from the sources, instead of asking: what they imply,
+what they leave out, who else is affected. Where they name an artifact as the goal while the
+why names an outcome, keep their framing and note the higher goal as a `[TBD — …]` for a
+person to choose; otherwise say nothing about the framing. Sweep every category of
+**Covering the requirements**: write the rules the sources imply, marked as inferred, and
+leave a `[TBD — …]` for each one that needs a person's choice. Skip step 11:
+`clarity-message` drafts the summary.
 
 ## Finish
 
@@ -214,10 +264,10 @@ conflicting>]` note, and propose any N/A only as a note. Never set `status: comp
   for `compose-specify`.
 - **Missing stakeholders.** Ask about every category, adversarial and indirect included.
 - **Wants as needs.** Challenge each requirement: what happens without it?
-- **Transcribing.** Capture the essence, not the conversation.
+- **Transcribing.** Capture the essence, not the conversation, and not the brief word for
+  word.
+- **Silent categories.** No security, stack or testing rule because nobody mentioned one.
 
 You're done when the problem fits in one or two sentences people nod at, every stakeholder and
 their needs are written down, the rules are sharp enough to judge solutions against, and
 every "why?" has an answer.
-
-Adapted from microsoft/clarity-agent (problem-clarification.md), MIT License — see LICENSE.txt.

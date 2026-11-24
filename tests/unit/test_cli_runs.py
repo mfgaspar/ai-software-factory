@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import time
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -14,7 +15,7 @@ from typer.testing import CliRunner, Result
 from compose.cli import runs
 from compose.cli.app import app
 from compose.core.db import open_database
-from compose.core.home import ensure_home
+from compose.core.home import Home, ensure_home
 from compose.engines.base import Usage
 from compose.engines.fake import Act, FakeEngine, Script, edit
 from compose.engines.registry import EngineRegistry
@@ -115,7 +116,7 @@ def test_run_reports_steps_cost_and_changes(
     assert steps["check"]["changes"] == {"files": 1, "added": 1, "removed": 0}
     totals = data["totals"]
     assert totals["cost_usd"] == pytest.approx(0.42)
-    assert totals["changes"] == {"files": 2, "added": 4, "removed": 0}
+    assert totals["changes"] == {"files": 3, "added": 4, "removed": 0}
     assert data["started_at"].endswith("+00:00") and "T" in data["started_at"]
 
     text = cli("status", data["id"])
@@ -136,10 +137,100 @@ def test_foreground_progress(
     result = cli("run", str(workflows["demo"]), "-i", "spec=a todo app", "-v")
     assert result.exit_code == 0, result.output
     out = result.output
-    assert "▸ build prompt" in out and "✓ build completed $0.4200" in out
+    assert "▸ build prompt" in out and "✓ build" in out and "$0.42" in out
     assert "» Writing the app." in out  # the model's commentary
     assert "✎ app.py" in out  # the files it writes, relative to the worktree
-    assert "completed  $0.4200, 2 files +4 -0" in out
+    assert "✓ Run completed" in out and "$0.42 · 3 files changed (+4 -0)" in out
+
+
+def test_a_feature_run_commits_its_work_and_says_where(
+    cli: Callable[..., Result], fake: FakeEngine, repo: Path, workflows: dict[str, Path]
+) -> None:
+    result = cli("run", str(workflows["demo"]), "-i", "spec=a todo app")
+    assert result.exit_code == 0, result.output
+    branch = "001-todo-app"
+    log = subprocess.run(
+        ["git", "log", "-1", "--format=%s", branch],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.splitlines()
+    assert log == [f"{branch}: Demo"]
+    shown = subprocess.run(
+        ["git", "show", "--name-only", "--format=", branch],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    assert sorted(shown) == ["NOTES.md", "app.py"]  # the engine's own files stay out
+    # the default branch is fast-forwarded, so the work is in the repo's own folder
+    assert (repo / "app.py").is_file() and (repo / "NOTES.md").is_file()
+    out = " ".join(result.output.split())
+    assert f"The work is merged into main, in . (branch {branch})." in out
+
+
+def test_a_feature_run_that_cannot_fast_forward_says_why(
+    cli: Callable[..., Result], fake: FakeEngine, repo: Path, workflows: dict[str, Path]
+) -> None:
+    (repo / "app.py").write_text("mine\n")  # an untracked file the merge would overwrite
+    result = cli("run", str(workflows["demo"]), "-i", "spec=a todo app")
+    assert result.exit_code == 0, result.output
+    branch = "001-todo-app"
+    assert (repo / "app.py").read_text() == "mine\n"
+    out = " ".join(result.output.split())
+    assert f"The work is on branch {branch} (1 commit ahead of main)." in out
+    assert f"git -C . diff main...{branch}" in out and f"git -C . merge {branch}" in out
+    assert "Not merged into main:" in out
+
+
+def test_features_merge_can_be_turned_off(
+    cli: Callable[..., Result], fake: FakeEngine, repo: Path, workflows: dict[str, Path], home: Home
+) -> None:
+    with home.config_path.open("a") as handle:
+        handle.write("\nfeatures:\n  merge: false\n")
+    result = cli("run", str(workflows["demo"]), "-i", "spec=a todo app")
+    assert result.exit_code == 0, result.output
+    assert not (repo / "app.py").exists()
+    out = " ".join(result.output.split())
+    assert "The work is on branch 001-todo-app (1 commit ahead of main)." in out
+    assert "Not merged" not in out
+
+
+def test_a_paused_feature_run_commits_too_but_offers_no_merge(
+    cli: Callable[..., Result], repo: Path, workflows: dict[str, Path]
+) -> None:
+    result = cli("run", str(workflows["gated"]), "-i", "spec=x", "--no-interactive")
+    assert result.exit_code == runs.EXIT_PAUSED, result.output
+    assert "1 commit ahead of main" in result.output and "merge" not in result.output
+
+
+def test_trace_full_reads_each_steps_transcript_file(
+    cli: Callable[..., Result], fake: FakeEngine, repo: Path, workflows: dict[str, Path]
+) -> None:
+    data = as_json(cli("run", str(workflows["demo"]), "-i", "spec=a todo app", "--json"))
+    build = next(s for s in data["steps"] if s["step_id"] == "build")
+    file = Path(data["run_dir"], "steps", f"{build['exec_id']}.transcript.jsonl")
+    assert file.is_file()
+
+    short = cli("trace", data["id"])
+    assert short.exit_code == 0, short.output
+    assert "transcript:" in short.output and ".transcript.j" in short.output
+
+    full = as_json(cli("trace", data["id"], "--full", "--json"))
+    step = next(s for s in full["steps"] if s["step_id"] == "build")
+    kinds = [e["kind"] for e in step["transcript_entries"]]
+    assert kinds[0] == "task" and kinds[-1] == "result"
+    assert step["transcript_entries"][0]["prompt"] == "build a todo app"
+    call = next(e for e in step["transcript_entries"] if e["kind"] == "tool_call")
+    assert call["name"] == "Write" and call["input"] == {"file_path": "app.py"}
+    shell = next(s for s in full["steps"] if s["step_id"] == "check")
+    assert shell["transcript"] is None  # no engine, no transcript
+
+    text = cli("trace", data["id"], "--full")
+    assert "build a todo app" in text.output and "Writing the app." in text.output
+    assert '"file_path": "app.py"' in text.output  # whole tool inputs
 
 
 def test_gate_pause_and_resume(
@@ -268,13 +359,13 @@ def test_changes(
     assert steps["build"]["summary"] == {"files": 2, "added": 3, "removed": 0}
     assert [h["name"] for h in steps["build"]["hooks"]] == ["notes"]
     assert steps["check"]["files"][0]["status"] == "M"
-    assert data["totals"] == {"files": 2, "added": 4, "removed": 0}
+    assert data["totals"] == {"files": 3, "added": 4, "removed": 0}
 
     one = as_json(cli("changes", run_id, "--step", "check", "--json"))
     assert one["totals"] == {"files": 1, "added": 1, "removed": 0}
 
     text = cli("changes", run_id).output
-    assert "app.py" in text and "2 files, +4 -0" in text
+    assert "app.py" in text and "3 files, +4 -0" in text
 
 
 def test_cost(
@@ -346,7 +437,7 @@ def _wait_for(run_id: str, status: str, timeout: float = 30.0) -> dict[str, Any]
     while True:
         db = open_database(home)
         try:
-            row = db.conn.execute("SELECT status, error FROM runs WHERE id = ?", (run_id,))
+            row = db.execute("SELECT status, error FROM runs WHERE id = ?", (run_id,))
             current = dict(row.fetchone())
         finally:
             db.close()
@@ -374,4 +465,4 @@ def test_detached_run_and_resume(
     _wait_for(data["id"], "completed")
     detail = as_json(cli("status", data["id"], "--json"))
     assert [s["status"] for s in detail["steps"]] == ["completed"] * 3
-    assert detail["totals"]["changes"] == {"files": 1, "added": 3, "removed": 0}
+    assert detail["totals"]["changes"] == {"files": 2, "added": 3, "removed": 0}

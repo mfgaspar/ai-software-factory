@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -92,7 +93,14 @@ CONVERSATION: list[object] = [
 def test_mapping_a_conversation() -> None:
     ticks = iter([1.0, 1.25])
     mapper = EventMapper(clock=lambda: next(ticks))
-    events = [e for m in CONVERSATION for e in mapper.map(m)]
+    mapped = [e for m in CONVERSATION for e in mapper.map(m)]
+    estimates = [e.usage.estimated_cost_usd for e in mapped if isinstance(e, UsageEvent)]
+    assert 0 < estimates[0] <= estimates[1] < estimates[2]  # the live estimate grows...
+    assert estimates[3] == 0.0  # ...and the result's real cost replaces it
+    events = [  # the figures Claude reported, without the estimate
+        UsageEvent(replace(e.usage, estimated_cost_usd=0.0)) if isinstance(e, UsageEvent) else e
+        for e in mapped
+    ]
     assert events[0] == MessageEvent("I'll create the file.")
     assert events[1] == UsageEvent(Usage(10, 5, 100, 40, 0.0, 1))
     assert events[2] == ToolCallEvent("tu1", "Write", {"file_path": "hello.txt", "content": "hi"})
@@ -165,7 +173,7 @@ def test_build_options(tmp_path: Path) -> None:
         7,
         2.5,
     )
-    assert opts.permission_mode == "acceptEdits"
+    assert opts.permission_mode == "auto"
     assert opts.setting_sources == ["project"]
     assert opts.env == {"COMPOSE_RUN_ID": "run_1"}
 
@@ -202,7 +210,7 @@ def test_build_options_rejects(tmp_path: Path, options: EngineOptions, message: 
 
 
 def test_default_registry_has_claude() -> None:
-    assert default_registry().names() == ["claude"]
+    assert default_registry().names() == ["claude", "copilot"]
 
 
 # ------------------------------------------------------------ run lifecycle

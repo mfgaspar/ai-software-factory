@@ -193,7 +193,7 @@ def test_validate_exits_1_on_fail(cli: Callable[..., Result], fake: FakeEngine, 
     assert cli("clarity", "--mode", "auto").exit_code == 0
     result = cli("clarity", "validate")
     assert result.exit_code == 1, result.output
-    assert "CLARITY: FAIL" in result.output
+    assert "Clarity verdict: FAIL" in result.output
     assert called(fake)[-1] == "clarity-validate"
 
 
@@ -205,3 +205,19 @@ def test_merge_is_pending_without_a_pass(
     result = cli("clarity", "merge", "--json")
     assert result.exit_code == 1
     assert as_json(result) == {"merged": False, "pending_reason": "no PASS verdict is recorded"}
+
+
+def test_interactive_runs_in_copilot_when_it_is_the_default_engine(
+    compose_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from compose.core.home import ensure_home
+    from compose.engines.copilot import install as copilot_installer
+
+    (compose_home / "config.yml").write_text("defaults: {engine: copilot}\n")
+    monkeypatch.setattr(copilot_installer, "cli_path", lambda: "/opt/bin/copilot")
+    program, argv = clarity_cli._conversation(ensure_home(), ["docs/"])
+    assert program == "Copilot" and argv[:2] == ["/opt/bin/copilot", "-i"]
+    assert argv[2].startswith("/clarity docs/ interactive\n")
+    monkeypatch.setattr(copilot_installer, "cli_path", lambda: None)
+    with pytest.raises(clarity_cli.RunError, match="Copilot CLI"):
+        clarity_cli._conversation(ensure_home(), [])

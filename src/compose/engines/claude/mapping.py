@@ -6,6 +6,7 @@ Two sources share one mapping: Claude Agent SDK messages and the JSON lines of
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import time
 from dataclasses import dataclass, field
@@ -14,7 +15,9 @@ from typing import Any
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
+    SystemMessage,
     TextBlock,
+    ThinkingBlock,
     ToolResultBlock,
     ToolUseBlock,
     UserMessage,
@@ -29,6 +32,7 @@ from compose.engines.base import (
     Usage,
     UsageEvent,
 )
+from compose.engines.claude.pricing import estimate
 
 
 def _int(data: dict[str, Any] | None, key: str) -> int:
@@ -50,6 +54,49 @@ def _tool_output(content: object) -> str:
         else:
             parts.append(json.dumps(item, default=str))
     return "\n".join(parts)
+
+
+_BLOCK_TYPES = {
+    TextBlock: "text",
+    ThinkingBlock: "thinking",
+    ToolUseBlock: "tool_use",
+    ToolResultBlock: "tool_result",
+}
+
+
+def _block(block: object) -> object:
+    if dataclasses.is_dataclass(block) and not isinstance(block, type):
+        return {"type": _BLOCK_TYPES.get(type(block), type(block).__name__), **_plain(block)}
+    return block
+
+
+def _plain(value: object) -> dict[str, Any]:
+    assert dataclasses.is_dataclass(value) and not isinstance(value, type)
+    return {f.name: getattr(value, f.name) for f in dataclasses.fields(value)}
+
+
+def as_stream_json(message: object) -> dict[str, Any]:
+    """An SDK message in the shape of a ``claude -p --output-format stream-json`` line, so
+    both transports keep the same transcript."""
+    if isinstance(message, AssistantMessage | UserMessage):
+        fields = _plain(message)
+        content = fields.pop("content")
+        if not isinstance(content, str):
+            content = [_block(b) for b in content]
+        body: dict[str, Any] = {"role": "assistant", "content": content}
+        if isinstance(message, AssistantMessage):
+            body.update(model=message.model, id=message.message_id, usage=message.usage)
+        else:
+            body["role"] = "user"
+        kind = "assistant" if isinstance(message, AssistantMessage) else "user"
+        return {"type": kind, "message": body, **fields}
+    if isinstance(message, SystemMessage):
+        return {"type": "system", "subtype": message.subtype, **message.data}
+    if isinstance(message, ResultMessage):
+        return {"type": "result", **_plain(message)}
+    if dataclasses.is_dataclass(message) and not isinstance(message, type):
+        return {"type": type(message).__name__, **_plain(message)}
+    return {"type": type(message).__name__, "repr": repr(message)}
 
 
 @dataclass
@@ -75,16 +122,25 @@ class EventMapper:
     session_id: str | None = None
     last_text: str = ""
     result: EngineResult | None = None
+    _written: int = 0  # characters of text and tool input the model wrote
+
+    CHARS_PER_TOKEN = 4  # mid-stream output counts are placeholders; text length is closer
 
     def usage(self, cost_usd: float = 0.0, turns: int | None = None) -> Usage:
         values = list(self._usage.values())
+        tokens = {
+            "input_tokens": sum(u.input_tokens for u in values),
+            "output_tokens": sum(u.output_tokens for u in values),
+            "cache_read_tokens": sum(u.cache_read_tokens for u in values),
+            "cache_write_tokens": sum(u.cache_write_tokens for u in values),
+        }
+        written = self._written // self.CHARS_PER_TOKEN
+        priced = {**tokens, "output_tokens": max(tokens["output_tokens"], written)}
         return Usage(
-            input_tokens=sum(u.input_tokens for u in values),
-            output_tokens=sum(u.output_tokens for u in values),
-            cache_read_tokens=sum(u.cache_read_tokens for u in values),
-            cache_write_tokens=sum(u.cache_write_tokens for u in values),
+            **tokens,
             cost_usd=cost_usd,
             turns=len(values) if turns is None else turns,
+            estimated_cost_usd=estimate(self.model, **priced),
         )
 
     def map(self, message: object) -> list[EngineEvent]:
@@ -172,12 +228,14 @@ class EventMapper:
         for block in blocks:
             if block.get("type") == "text":
                 text = str(block.get("text") or "")
+                self._written += len(text)
                 if text.strip():
                     self.last_text = text
                     events.append(MessageEvent(text))
             elif block.get("type") == "tool_use":
                 call_id = str(block.get("id", ""))
                 tool_input = block.get("input")
+                self._written += len(json.dumps(tool_input, default=str))
                 self._started[call_id] = self.clock()
                 events.append(
                     ToolCallEvent(

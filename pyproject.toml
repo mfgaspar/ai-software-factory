@@ -24,6 +24,13 @@ dependencies = [
     "claude-agent-sdk>=0.1",
 ]
 
+[project.optional-dependencies]
+# export runs as OpenTelemetry traces and metrics: `telemetry: {enabled: true}` in the config
+otel = [
+    "opentelemetry-sdk>=1.25",
+    "opentelemetry-exporter-otlp-proto-http>=1.25",
+]
+
 [project.scripts]
 compose = "compose.cli.app:main"
 

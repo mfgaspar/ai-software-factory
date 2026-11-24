@@ -7,15 +7,20 @@ from pathlib import Path
 import pytest
 
 from compose.core import store
-from compose.core.models import FileChange, FileStatus, HookExec, HookKind, Run, RunStatus
+from compose.core.models import FileStatus, HookExec, HookKind, Run, RunStatus, StepExec
 from compose.engines.base import EngineOptions, EngineTask, Usage
 from compose.engines.fake import Act, Script, edit
-from compose.tracking import aggregate
+from compose.runner.state import RunFiles
+from compose.tracking import aggregate, journal
+from compose.tracking.journal import FileChange
 from tests.unit.runner_helpers import Env
 
 
 def changes_of(env: Env, exec_id: str) -> list[FileChange]:
-    return store.select(env.db, FileChange, "step_exec_id = ?", (exec_id,), "path")
+    row = store.get(env.db, StepExec, exec_id)
+    assert row is not None
+    files = RunFiles(env.home.run_dir(row.run_id))
+    return sorted(journal.read_changes(files, exec_id), key=lambda c: c.path)
 
 
 def hooks_of(env: Env, exec_id: str) -> list[HookExec]:
@@ -104,7 +109,7 @@ steps:
         ("a.txt", FileStatus.MODIFIED, 0, 1),
     ]
     run_total = aggregate.totals(env.db, "run", run_id=run.id)[0]
-    assert run_total.files_changed == 2  # a.txt counts once for the run
+    assert run_total.files_changed == 3  # a.txt counts in each step that changed it
     assert (run_total.lines_added, run_total.lines_removed) == (2, 2)
 
 
@@ -244,7 +249,8 @@ async def test_aggregates(env: Env) -> None:
 
     repo = aggregate.totals(env.db, "repo")
     assert len(repo) == 1 and repo[0].runs == 2 and repo[0].cost_usd == pytest.approx(2.4)
-    assert repo[0].files_changed == 2  # hi.txt, once in each feature
+    # hi.txt once: the second feature starts from the merged first one, and rewrites it unchanged
+    assert repo[0].files_changed == 1
     today = datetime.now(UTC).date().isoformat()
     assert [(d.key, d.runs) for d in aggregate.totals(env.db, "day")] == [(today, 2)]
 

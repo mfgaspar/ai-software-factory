@@ -174,7 +174,7 @@ def _summary(data: bytes) -> str:
 
 async def _ask(rc: RunContext, question: str) -> bool:
     interaction = rc.runner.interaction
-    if not (interaction.interactive and interaction.ask_confirm):
+    if interaction.auto_approve or not (interaction.interactive and interaction.ask_confirm):
         return True  # non-interactive runs execute the hook
     return await asyncio.to_thread(interaction.ask_confirm, question)
 
@@ -340,7 +340,7 @@ async def run_group(
 
 def fold_hook_metrics(db: Database, row: StepExec) -> None:
     """Add the tokens and cost of a step's hooks to the step's own totals."""
-    totals = db.conn.execute(
+    totals = db.execute(
         """
         SELECT COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
                COALESCE(SUM(cache_read_tokens), 0), COALESCE(SUM(cache_write_tokens), 0),

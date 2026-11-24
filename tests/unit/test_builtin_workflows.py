@@ -155,7 +155,7 @@ def stuck(task: EngineTask, cwd: Path, options: EngineOptions) -> Script:
             "implement-gaps",
             {"review_spec_verdict": "approve", "review_plan_verdict": "approve"},
         ),
-        ("automated", "implement-remaining", {"skip_clarify": "true"}),
+        ("automated", "implement-remaining", {"skip_clarify": "true", "with_skills": "false"}),
     ],
 )
 async def test_converge_stops_when_implement_changes_nothing(
@@ -260,7 +260,8 @@ async def test_automated_is_the_default_workflow(builtin: Env) -> None:
 
 async def test_automated_pauses_at_clarify_then_runs_to_the_end(builtin: Env) -> None:
     runner = builtin.runner()
-    run = await runner.start(builtin.repo, workflow("automated"), {"spec": "Export to CSV"})
+    inputs = {"spec": "Export to CSV", "with_skills": "false"}
+    run = await runner.start(builtin.repo, workflow("automated"), inputs)
     assert run.status is RunStatus.PAUSED and run.current_step_id == "clarify-gate"
     assert called(builtin) == ["compose-constitution", "compose-specify", "compose-clarify"]
 
@@ -283,6 +284,7 @@ async def test_automated_options_models_and_convergence(builtin: Env) -> None:
     inputs = {
         "spec": "Add login",
         "skip_clarify": "true",
+        "with_skills": "false",
         "with_checklist": "true",
         "checklist_topic": "security",
         "reasoning": "claude-haiku-5-5",
@@ -423,8 +425,11 @@ SKILLS_MD = """# Suggested skills
 
 ## Install
 
-npx skills add vercel-labs/agent-skills@web-design-guidelines
+npx skills add vercel-labs/agent-skills@web-design-guidelines # UI review rules
 npx skills add anthropics/skills@webapp-testing
+npx skills add obra/superpowers@test-driven-development # write the test first
+npx skills add someone/skills@TDD
+npx skills add someone/bdd-workflow # behaviour first
 npx skills add evil/x; touch pwned
 """
 
@@ -448,11 +453,12 @@ def fake_npx(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return log
 
 
-AUTOMATED_SKILLS = {"spec": "Add a dashboard", "skip_clarify": "true", "with_skills": "true"}
+# find-skills runs by default: no with_skills input
+AUTOMATED_SKILLS = {"spec": "Add a dashboard", "skip_clarify": "true"}
 
 
-async def test_automated_skips_skills_by_default(builtin: Env) -> None:
-    inputs = {"spec": "Add a dashboard", "skip_clarify": "true"}
+async def test_automated_skips_skills_when_opted_out(builtin: Env) -> None:
+    inputs = {"spec": "Add a dashboard", "skip_clarify": "true", "with_skills": "false"}
     run = await builtin.runner().start(builtin.repo, workflow("automated"), inputs)
     assert run.status is RunStatus.COMPLETED, run.error
     assert "compose-find-skills" not in called(builtin)
@@ -466,7 +472,15 @@ async def test_automated_finds_skills_after_plan_and_waits(builtin: Env, fake_np
     assert called(builtin)[-2:] == ["compose-plan", "compose-find-skills"]
     find = builtin.fake.calls[-1][0]
     assert "Do not install anything" in (find.args or "")
+    assert "this project is spec-driven" in (find.args or "")
     assert not fake_npx.exists()
+    # the question names what would be installed, and nothing else
+    (listed,) = builtin.exec_of(run, "skills-list")
+    assert listed.output and listed.output["stdout"] == (
+        "  - vercel-labs/agent-skills@web-design-guidelines: UI review rules\n"
+        "  - anthropics/skills@webapp-testing"
+    )
+    assert listed.output["stdout"] in (run.error or "")
 
     run = await runner.resume(run.id, choice="install")
     assert run.status is RunStatus.COMPLETED, run.error
@@ -475,10 +489,18 @@ async def test_automated_finds_skills_after_plan_and_waits(builtin: Env, fake_np
     assert installs == [
         "--yes skills add vercel-labs/agent-skills@web-design-guidelines -a claude-code -y",
         "--yes skills add anthropics/skills@webapp-testing -a claude-code -y",
-    ]  # the malformed line never reaches npx
+    ]  # the malformed line and the test-driven skills never reach npx
     assert not (builtin.worktree(run) / "pwned").exists()
     (install,) = builtin.exec_of(run, "skills-install")
     assert install.status.value == "completed"
+
+
+async def test_automated_asks_nothing_when_no_skill_is_suggested(builtin: Env) -> None:
+    """The default scripts suggest nothing, so there is no gate to stop at."""
+    run = await builtin.runner().start(builtin.repo, workflow("automated"), AUTOMATED_SKILLS)
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert "compose-find-skills" in called(builtin)
+    assert builtin.exec_of(run, "skills-gate") == []
 
 
 async def test_automated_rejected_skills_are_not_installed(builtin: Env, fake_npx: Path) -> None:

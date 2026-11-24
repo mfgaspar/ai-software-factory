@@ -1,25 +1,25 @@
-"""Cost, token and change totals by step, run, feature, repo or day.
+"""Cost, token and change totals by step, run, feature, repo, day or user.
 
 Counting rules (so nothing is counted twice):
 
 - tokens and cost come from leaf step executions (``command``, ``prompt``, ``shell``,
   ``gate``), which already include their hooks once closed, plus hooks not folded into a
   leaf: run hooks, hooks around a fan-out, and hooks of a step still paused or running;
-- files and lines come from the recorded file changes of whole step windows (the
-  per-hook breakdown rows are left out); a file changed in two steps of the same
-  feature counts once per group;
+- files and lines are the totals each leaf step and fan-out recorded for its whole window
+  (hooks included), so a file changed in two steps counts in both; the paths themselves
+  are in the run's ``steps/<exec id>.changes.jsonl`` files;
 - a child run (``type: workflow``) counts toward its root run.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Literal
 
-from compose.core.db import Database
+from compose.core.db import Database, format_ts
 
-GroupBy = Literal["step", "run", "feature", "repo", "day"]
+GroupBy = Literal["step", "run", "feature", "repo", "day", "user"]
 LEAF = "('command', 'prompt', 'shell', 'gate', 'questions', 'clarity')"
 
 _KEYS: dict[str, str] = {
@@ -28,6 +28,7 @@ _KEYS: dict[str, str] = {
     "feature": "feature_id",
     "repo": "repo_id",
     "day": "day",
+    "user": "started_by",
 }
 
 
@@ -79,31 +80,28 @@ usage(run_id, step_id, started_at, cost, tin, tout, tcr, tcw) AS (
     FROM hook_execs h LEFT JOIN step_execs s ON s.id = h.step_exec_id
     WHERE s.id IS NULL OR s.status IN ('paused', 'running') OR s.step_type NOT IN {LEAF}
 ),
-changes(run_id, step_id, started_at, path, added, removed) AS (
-    SELECT c.run_id, s.step_id, s.started_at, c.path, COALESCE(c.added, 0),
-           COALESCE(c.removed, 0)
-    FROM file_changes c JOIN step_execs s ON s.id = c.step_exec_id
-    WHERE c.hook_exec_id IS NULL
+changes(run_id, step_id, started_at, files, added, removed) AS (
+    SELECT run_id, step_id, started_at, files_changed, lines_added, lines_removed
+    FROM step_execs WHERE step_type IN {LEAF} OR step_type = 'fan-out'
 ),
-rows(kind, root_run_id, feature_id, repo_id, step_id, day, started_at,
-     cost, tin, tout, tcr, tcw, path, added, removed) AS (
+rows(kind, root_run_id, feature_id, repo_id, step_id, day, started_by, started_at,
+     cost, tin, tout, tcr, tcw, files, added, removed) AS (
     SELECT 'u', roots.root, r.feature_id, r.repo_id, u.step_id, substr(u.started_at, 1, 10),
-           u.started_at, u.cost, u.tin, u.tout, u.tcr, u.tcw, NULL, 0, 0
+           COALESCE(ru.started_by, 'unknown'), u.started_at, u.cost, u.tin, u.tout, u.tcr, u.tcw, 0, 0, 0
     FROM usage u JOIN runs r ON r.id = u.run_id JOIN roots ON roots.id = r.id
+    JOIN runs ru ON ru.id = roots.root
     UNION ALL
     SELECT 'c', roots.root, r.feature_id, r.repo_id, c.step_id, substr(c.started_at, 1, 10),
-           c.started_at, 0, 0, 0, 0, 0, COALESCE(r.feature_id, r.repo_id) || ':' || c.path,
-           c.added, c.removed
+           COALESCE(ru.started_by, 'unknown'), c.started_at, 0, 0, 0, 0, 0, c.files, c.added, c.removed
     FROM changes c JOIN runs r ON r.id = c.run_id JOIN roots ON roots.id = r.id
+    JOIN runs ru ON ru.id = roots.root
 )
 """
 
 
 def utc(moment: datetime) -> str:
     """Timestamps are stored as UTC ISO strings; compare in the same form."""
-    if moment.tzinfo is None:
-        moment = moment.replace(tzinfo=UTC)
-    return moment.astimezone(UTC).isoformat()
+    return format_ts(moment)
 
 
 def totals(
@@ -130,20 +128,20 @@ def totals(
             where.append(f"{column} = ?")
             params.append(value)
     if since is not None:
-        where.append("julianday(started_at) >= julianday(?)")
+        where.append("started_at >= ?")
         params.append(utc(since))
     if until is not None:
-        where.append("julianday(started_at) < julianday(?)")
+        where.append("started_at < ?")
         params.append(utc(until))
     clause = f"WHERE {' AND '.join(where)}" if where else ""
     sql = f"""{_BASE}
     SELECT {key}, SUM(cost), SUM(tin), SUM(tout), SUM(tcr), SUM(tcw),
-           COUNT(DISTINCT path), SUM(added), SUM(removed), COUNT(DISTINCT root_run_id)
+           SUM(files), SUM(added), SUM(removed), COUNT(DISTINCT root_run_id)
     FROM rows {clause}
     GROUP BY {key} ORDER BY {key}
     """
     out: list[Totals] = []
-    for row in db.conn.execute(sql, params).fetchall():
+    for row in db.execute(sql, params).fetchall():
         out.append(
             Totals(
                 key=row[0],

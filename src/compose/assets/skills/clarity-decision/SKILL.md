@@ -55,7 +55,8 @@ when outcomes differ materially and the reasoning should survive.
    analysis so far, so an unfinished decision is still useful.
 3. **The user decides.** They have context you lack: team, politics, risk appetite,
    experience. Make your case, then let them choose. Accept only on the user's explicit choice
-   in this conversation; with no person present (an `auto` run), leave it `proposed`.
+   in this conversation, or in an answered question (see **Answers in the questions file**);
+   otherwise leave it `proposed`.
 4. **Record the choice.** The Decision section gets what was chosen, by whom, and why it fits
    the criteria and assumptions. Consequences: what gets easier or harder. Reconsider when: the
    assumptions or criteria that would change it, plus any explicit review points ("after six
@@ -107,11 +108,37 @@ notice a decision's basis has moved. For each accepted ADR:
 the index with the evidence; on the user's agreement set `status: n/a` and a `reason:`. Never
 decide N/A alone.
 
-## Unattended (`auto`)
+## Questions
 
-When `/clarity` passes `auto`, or no person is present, ask nothing. Draft ADRs from the
-sources and leave them `proposed`. Leave each gap as a `[TBD — …]` note. Never accept an ADR,
-never set the index `complete`, and never write `reviewed` hashes.
+Ask a person only what a person must answer: their intent and priorities, facts only they
+hold (real users, numbers, deadlines, owners), a trade-off the material leaves open that is
+theirs to own, a conflict the sources can't settle, and confirmations. Anything you can work
+out from the sources, the code, the other `.clarity/` documents, earlier answers or
+established practice, decide yourself: write it, mark it as inferred with where it came
+from, and name it in your summary so the person can correct it. `/clarity` sets this out in
+**Ask a person only what needs a person**.
+
+## Unattended
+
+`/clarity` runs this skill unattended in its `auto`, `draft` and `apply` phases, and passes
+`auto`. Work the same way whenever `COMPOSE_RUN_ID` is set or no person is present. Ask
+nothing. Write an ADR for each real fork the sources and the other documents show, with its
+criteria, options and your recommendation, and leave it `proposed`. A choice the sources or
+the code already made is recorded as context, not reopened. Leave each gap as a `[TBD — …]`
+note. Never accept an ADR except as the next section allows, never set the index
+`complete`, and never write its `reviewed` hashes. Return each `proposed` ADR with its
+question, its options and your recommendation: `/clarity` asks a person.
+
+## Answers in the questions file
+
+An answered question in `.clarity/questions.yml` is the person's choice, with nobody in the
+conversation. `/clarity` uses it in its `mixed` and `apply` phases. It counts only when the
+question's `document` is this ADR, it isn't `obsolete`, and its `answer` picks one of the
+ADR's options, or states another choice clearly. Then record it as in step 4 of **Making a
+decision**: the Decision section names the choice, who made it (`answered_by`) and why it
+fits; `status: accepted`, `date:` the date of `answered_at`, and the `reviewed` hashes.
+Update the index row and propagate (step 5). An answer that chooses nothing leaves the ADR
+as it is: say what is still needed. Never write the answer fields yourself.
 
 ## Finish
 
@@ -131,5 +158,3 @@ never set the index `complete`, and never write `reviewed` hashes.
 - **Forgetting to propagate**: unreflected decisions create contradictions.
 - **Treating decisions as permanent**: revisiting when the context changes is good stewardship,
   which is why "reconsider when" matters.
-
-Adapted from microsoft/clarity-agent (decision-guidance.md), MIT License — see LICENSE.txt.

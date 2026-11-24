@@ -199,7 +199,7 @@ steps:
     assert after is not None and after["stdout"].strip() == "HELLO"
     call = env.exec_of(run, "call")[0]
     assert call.output is not None and call.output["shout"] == "HELLO"
-    child_rows = env.db.conn.execute(
+    child_rows = env.db.execute(
         "SELECT id, status, parent_exec_id FROM runs WHERE parent_run_id = ?", (run.id,)
     ).fetchall()
     assert [(r[1], r[2]) for r in child_rows] == [("completed", call.id)]

@@ -11,11 +11,13 @@ from compose.core import store
 from compose.core.config import Config, DefaultsConfig
 from compose.core.db import Database
 from compose.core.home import Home
-from compose.core.models import Action, Run, StepExec
+from compose.core.models import Run, StepExec
 from compose.engines.fake import FakeEngine
 from compose.engines.registry import EngineRegistry
 from compose.runner.runner import Interaction, Runner
 from compose.runner.state import RunFiles
+from compose.tracking import journal
+from compose.tracking.journal import Action
 from compose.workflows import loader
 
 
@@ -51,7 +53,9 @@ class Env:
         return [e for e in self.execs(run) if e.step_id == step_id]
 
     def actions(self, run: Run) -> list[Action]:
-        return store.select(self.db, Action, "run_id = ?", (run.id,), "seq")
+        files = self.files(run)
+        owners = ["run", *files.action_owners()]
+        return journal.read_actions(files, owners)
 
     def files(self, run: Run) -> RunFiles:
         return RunFiles(self.home.run_dir(run.id))
@@ -62,7 +66,7 @@ class Env:
             workdir = self.files(run).read_state().workdir
             assert workdir is not None, f"{run.id} has no working directory yet"
             return Path(workdir)
-        feature = self.db.conn.execute(
+        feature = self.db.execute(
             "SELECT worktree_path FROM features WHERE id = ?", (run.feature_id,)
         ).fetchone()
         return Path(feature[0])

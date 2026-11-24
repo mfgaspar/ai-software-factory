@@ -36,7 +36,10 @@ from compose.core.config import load_config
 from compose.core.db import Database
 from compose.core.home import Home
 from compose.core.models import Repo, StepExec
+from compose.engines.base import EngineTask
 from compose.engines.claude import install as installer
+from compose.engines.copilot import install as copilot_installer
+from compose.engines.copilot.adapter import by_name
 from compose.repos import registry
 from compose.runner.errors import RunError
 from compose.runner.recovery import recover_stale_runs
@@ -105,11 +108,12 @@ def _after(db: Database, as_json: bool, *, fail_exit: bool) -> Any:
         result = (found.get("verdict") or {}).get("result")
         merged = found.get("merge") or {}
         if not as_json and result:
-            line = f"CLARITY: {result}"
+            style = "green" if result == "PASS" else "red"
+            line = f"Clarity verdict: [bold {style}]{result}[/bold {style}]"
             if merged.get("merged"):
-                line += " — merged into the default branch (push it when ready)"
+                line += "\nMerged into the default branch. Push it when you're ready."
             elif result == "PASS" and merged.get("pending_reason"):
-                line += f" — merge pending: {merged['pending_reason']}"
+                line += f"\nNot merged yet: {merged['pending_reason']}"
             console.print(line, highlight=False, soft_wrap=True)
         return 1 if fail_exit and result != "PASS" else None
 
@@ -181,21 +185,34 @@ def start(
         )
 
 
+def _conversation(home: Home, sources: list[str]) -> tuple[str, list[str]]:
+    """The program ``/clarity … interactive`` runs in, and its command: Copilot when it is
+    the default engine, otherwise Claude Code."""
+    task = EngineTask.skill("clarity", " ".join([*sources, "interactive"]))
+    if load_config(home).defaults.engine == "copilot":
+        copilot = copilot_installer.cli_path()
+        if copilot is None:
+            raise RunError("GitHub Copilot CLI (copilot) is not installed; see compose check")
+        return "Copilot", [copilot, "-i", by_name(task)]
+    claude = installer.cli_path()
+    if claude is None:
+        raise RunError("Claude Code (claude) is not installed; see compose check")
+    return "Claude Code", [claude, task.label]
+
+
 def _interactive(
     sources: list[str], repo: str | None, *, detach: bool, as_json: bool, verbose: bool
 ) -> None:
-    """``/clarity … interactive`` in Claude Code in the clarity worktree, then validate."""
+    """``/clarity … interactive`` as a conversation in the clarity worktree, then validate."""
     if detach:
         raise RunError("--mode interactive is a conversation; it can't run with --detach")
     if not _has_tty():
         raise RunError(
-            "--mode interactive needs a terminal (it starts a Claude Code conversation);"
+            "--mode interactive needs a terminal (it starts a conversation with the engine);"
             " use --mode mixed or --mode auto here"
         )
-    claude = installer.cli_path()
-    if claude is None:
-        raise RunError("Claude Code (claude) is not installed; see compose check")
     with open_store() as (home, db):
+        program, argv = _conversation(home, sources)
         target = registry.resolve_repo(db, repo, Path.cwd())
         recover_stale_runs(db, home)
         active = service.active_run(db, target)
@@ -206,10 +223,9 @@ def _interactive(
             )
         worktree = clarity_branch.ensure_worktree(home, target, branch=_branch(home))
         installer.install(worktree, worktree=True)
-        prompt = " ".join(["/clarity", *sources, "interactive"])
         if not as_json:
-            console.print(f"Starting Claude Code in {worktree}", highlight=False)
-        _attached([claude, prompt], worktree)
+            console.print(f"Starting {program} in {worktree}", highlight=False)
+        _attached(argv, worktree)
         _start_validate(db, home, target, detach=False, as_json=as_json, verbose=verbose)
 
 

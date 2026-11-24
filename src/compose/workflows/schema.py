@@ -132,6 +132,8 @@ class BaseStep(_Model):
     id: str = Field(pattern=STEP_ID_RE)
     name: str | None = None
     description: str | None = None
+    # bookkeeping a person needn't follow: a foreground run lists it only if it fails
+    quiet: bool = False
     continue_on_error: bool = False
     timeout: float | None = Field(default=None, gt=0, description="Seconds.")
 
@@ -282,14 +284,14 @@ class QuestionsStep(BaseStep):
         return set(self.holding_kinds)
 
 
-CLARITY_ACTIONS = ("record-verdict", "stamp-constitution", "commit", "merge")
+CLARITY_ACTIONS = ("record-verdict", "publish-memory", "commit", "merge")
 
 
 class ClarityStep(BaseStep):
     """compose's own clarity bookkeeping; allowed only in built-in workflows."""
 
     type: Literal["clarity"] = "clarity"
-    action: Literal["record-verdict", "stamp-constitution", "commit", "merge"]
+    action: Literal["record-verdict", "publish-memory", "commit", "merge"]
     from_step: str | None = None
 
     @model_validator(mode="after")

@@ -61,8 +61,8 @@ Fill every section of the template and remove every placeholder (`[TBD…]`,
 
 - **Context**: the boundary, the people and external systems around it, the main interactions.
 - **Components**: open with the core nouns and verbs. Then each component's responsibility and
-  the technology chosen, linking the ADR for each notable choice. Cite the goals (`G-###`,
-  success criteria) and rules (NFR-###, CON-###, STD-###) a component exists to meet.
+  the technology chosen, linking the ADR for each notable choice. Cite the success criteria
+  (and `G-###` goals, once the product brief defines them) and rules (NFR-###, CON-###, STD-###) a component exists to meet.
 - **Data flows**: how data moves between components, its sensitivity, and where it crosses a
   trust boundary.
 - **Deployment**: environments, hosting, topology, scaling, and how it is released and rolled
@@ -81,6 +81,15 @@ Fill every section of the template and remove every placeholder (`[TBD…]`,
 
   Replace the template's sample diagram rather than appending to it.
 
+Before you return, read it as the person who will plan a feature from it:
+
+- every component has one responsibility and a named technology, or a question about it;
+- the text and the diagram show the same components and flows;
+- each NFR and constraint is tied to the component or concern that meets it, and each High
+  or Critical failure mode to the element that manages it;
+- what the code does today and what is planned are told apart;
+- a new feature can be placed in a component without asking what was meant.
+
 Also capture what surfaced while designing: new failure modes as
 `[for: clarity-failure-brainstorm]` notes in `.clarity/notes.md`, requirement gaps as
 `[for: clarity-problem]` notes, and open risks in the document.
@@ -97,12 +106,31 @@ solution itself needs rethinking, say so and point to `clarity-solution`.
 organizational change), propose N/A for the architecture with the evidence; on the user's
 agreement set `status: n/a` and a `reason:`. Never decide N/A alone.
 
-## Unattended (`auto`)
+## Questions
 
-When `/clarity` passes `auto`, or no person is present, ask nothing. Draft from the sources,
-the code and the other documents. Leave each gap as a `[TBD — <what's missing or
-conflicting>]` note, and propose any N/A only as a note. Never set `status: complete` or
-`n/a`, and never write `reviewed` hashes. Return the draft and its list of gaps.
+Ask a person only what a person must answer: their intent and priorities, facts only they
+hold (real users, numbers, deadlines, owners), a trade-off the material leaves open that is
+theirs to own, a conflict the sources can't settle, and confirmations. Anything you can work
+out from the sources, the code, the other `.clarity/` documents, earlier answers or
+established practice, decide yourself: write it, mark it as inferred with where it came
+from, and name it in your summary so the person can correct it. `/clarity` sets this out in
+**Ask a person only what needs a person**.
+
+## Unattended
+
+`/clarity` runs this skill unattended in its `auto`, `draft` and `apply` phases, and passes
+`auto`. Work the same way whenever `COMPOSE_RUN_ID` is set or no person is present. Ask
+nothing. Draft from the sources, the code and the other documents, drafts included. Fill
+what you can work out yourself (see **Questions**), marked as inferred, and leave a
+`[TBD — <what's missing or conflicting>]` note only for what a person must answer, in the
+section it belongs to,
+and propose any N/A only as a note. Never set `status: complete` or `n/a`, and never write
+`reviewed` hashes. Return the draft and its list of gaps: `/clarity` turns them into
+questions for a person.
+
+Describe what the code already does as fact. A technology or structural choice that isn't
+made yet, and is the user's to make, becomes a `[TBD — …]` note naming the options, or a
+`proposed` ADR through `clarity-decision`.
 
 ## Finish
 
@@ -123,6 +151,3 @@ conflicting>]` note, and propose any N/A only as a note. Never set `status: comp
 - **Getting the nouns wrong**: spend time there; everything downstream inherits them.
 - **Premature optimization** and **over-specifying**.
 - **Forgetting operations**: a system that can't be deployed, monitored or debugged isn't done.
-
-Adapted from microsoft/clarity-agent (architecture-design.md and the threat-model rule in its
-setup snippet), MIT License — see LICENSE.txt.

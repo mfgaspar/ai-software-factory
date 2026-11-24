@@ -1,8 +1,7 @@
 """Fake clarity skills for the fake engine: they write ``.clarity/`` files like the real ones.
 
 ``/clarity draft`` writes a PRD and a gap question, ``/clarity apply`` raises a review
-question until one is answered, ``compose-constitution`` writes the constitution and
-``clarity-validate`` passes when nothing is pending.
+question until one is answered, and ``clarity-validate`` passes when nothing is pending.
 """
 
 from __future__ import annotations
@@ -62,8 +61,6 @@ def skills(
             notes = "".join(f"- {q['id']}: {q.get('answer')}\n" for q in items)
             acts = edit(".clarity/product/prd.md", f"# PRD\n{notes}")
             return Script([*acts, *edit(QFILE, _dump(items))])
-        if task.text == "compose-constitution":
-            return Script(edit(constitution.CONSTITUTION_FILE, "# Constitution\n"))
         if task.text == "clarity-validate":
             pending = [q for q in _load(cwd) if q.get("answer") is None]
             last = f"CLARITY: FAIL ({len(pending)} incomplete)" if pending else "CLARITY: PASS"

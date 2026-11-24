@@ -16,7 +16,7 @@ from compose.clarity import constitution, fingerprint, questions, verdict
 from compose.clarity.questions import Question
 from compose.core.models import Run, RunStatus
 from compose.engines.base import EngineOptions, EngineTask
-from compose.engines.fake import Script, edit
+from compose.engines.fake import Script
 from compose.repos import git
 from compose.runner.errors import InputError
 from compose.workflows import loader
@@ -58,7 +58,6 @@ async def test_mixed_pauses_then_passes_and_merges(env: Env) -> None:
         "clarity docs/prd.md draft",
         "clarity apply",
         "clarity apply",
-        "compose-constitution from-clarity",
         "clarity-validate",
     ]
     workdir = env.worktree(run)
@@ -66,6 +65,8 @@ async def test_mixed_pauses_then_passes_and_merges(env: Env) -> None:
     assert _output(env, run, "verdict")["result"] == "PASS"
     stamped = constitution.read_text((workdir / constitution.CONSTITUTION_FILE).read_text())
     assert stamped == fp
+    committed = git.git(workdir, "ls-files", "--", ".compose/memory").splitlines()
+    assert committed == [".compose/memory/.published", ".compose/memory/constitution.md"]
     sha = _output(env, run, "commit")["sha"]
     assert sha == git.rev_parse(env.repo_path, "clarity")
     assert git.git(workdir, "log", "-1", "--format=%s") == f"clarity: mixed run {run.id}"
@@ -82,7 +83,6 @@ async def test_auto_never_pauses_and_fails_without_merging(env: Env) -> None:
     assert run.status is RunStatus.COMPLETED, run.error
     assert _called(env) == [
         "clarity draft",
-        "compose-constitution from-clarity",
         "clarity-validate",
     ]
     assert _output(env, run, "verdict")["result"] == "FAIL"
@@ -147,38 +147,58 @@ def _validate_only(result: str) -> ScriptFor:
     def script(task: EngineTask, cwd: Path, options: EngineOptions) -> Script:
         if task.text == "clarity-validate":
             return Script(final_text=f"Checked.\n{result}")
-        if task.text == "compose-constitution":
-            return Script(edit(constitution.CONSTITUTION_FILE, "# Generated\n"))
         return Script()
 
     return script
 
 
-async def test_validate_regenerates_a_stale_constitution_on_pass(env: Env) -> None:
+async def test_validate_publishes_memory_on_pass(env: Env) -> None:
     _commit_foundation(env, "stale")
     env.fake.scripts = _validate_only("CLARITY: PASS")
     run = await env.runner().start(env.repo, _workflow("clarity-validate"))
     assert run.status is RunStatus.COMPLETED, run.error
-    assert _called(env) == ["clarity-validate", "compose-constitution from-clarity"]
+    assert _called(env) == ["clarity-validate"]  # publishing calls no model
     workdir = env.worktree(run)
     fp = fingerprint.of_dir(workdir)
     assert _output(env, run, "verdict")["constitution_current"] is False
     assert constitution.read_ref(env.repo_path, "main") == fp
+    index = (workdir / constitution.CONSTITUTION_FILE).read_text()
+    assert "# Project memory" in index and "Hand-made" not in index
+    assert (workdir / ".compose/memory/.published").read_text() == "constitution.md\n"
     assert git.git(workdir, "log", "-1", "--format=%s") == f"clarity: validate run {run.id}"
     assert _output(env, run, "merge")["merged"] is True
 
 
-async def test_validate_keeps_a_current_constitution(env: Env) -> None:
+async def test_validate_publishes_even_when_the_index_is_current(env: Env) -> None:
+    """A current stamp doesn't skip publishing: a compose upgrade may change the files."""
     _commit_foundation(env, None)
     fp = fingerprint.of_ref(env.repo_path, "main")
     path = env.repo_path / constitution.CONSTITUTION_FILE
-    constitution.stamp(path, fp)
+    path.write_text(f"{constitution.marker(fp)}\n# Written by an older compose\n")
     git.git(env.repo_path, "commit", "-q", "-am", "stamp")
     env.fake.scripts = _validate_only("CLARITY: PASS")
     run = await env.runner().start(env.repo, _workflow("clarity-validate"))
     assert run.status is RunStatus.COMPLETED, run.error
     assert _called(env) == ["clarity-validate"]
     assert _output(env, run, "verdict")["constitution_current"] is True
+    assert _output(env, run, "memory")["fingerprint"] == fp
+    index = (env.worktree(run) / constitution.CONSTITUTION_FILE).read_text()
+    assert "# Project memory" in index and "older compose" not in index
+
+
+async def test_validate_refuses_a_legacy_constitution_until_published(env: Env) -> None:
+    """A model-written constitution (old marker) isn't current, whatever its fingerprint."""
+    _commit_foundation(env, None)
+    fp = fingerprint.of_ref(env.repo_path, "main")
+    path = env.repo_path / constitution.CONSTITUTION_FILE
+    path.write_text(f"<!-- generated-from-clarity: {fp} -->\n# Constitution\n")
+    git.git(env.repo_path, "commit", "-q", "-am", "legacy")
+    assert constitution.is_legacy(path.read_text())
+    assert constitution.read_ref(env.repo_path, "main") is None
+    env.fake.scripts = _validate_only("CLARITY: PASS")
+    run = await env.runner().start(env.repo, _workflow("clarity-validate"))
+    assert run.status is RunStatus.COMPLETED, run.error
+    assert constitution.read_ref(env.repo_path, "main") == fp
 
 
 async def test_validate_leaves_the_constitution_alone_on_fail(env: Env) -> None:
@@ -188,7 +208,8 @@ async def test_validate_leaves_the_constitution_alone_on_fail(env: Env) -> None:
     run = await env.runner().start(env.repo, _workflow("clarity-validate"))
     assert run.status is RunStatus.COMPLETED, run.error
     assert _called(env) == ["clarity-validate"]
-    assert constitution.read_text((env.worktree(run) / constitution.CONSTITUTION_FILE).read_text())
+    kept = (env.worktree(run) / constitution.CONSTITUTION_FILE).read_text()
+    assert "Hand-made" in kept  # nothing is published on FAIL
     assert _output(env, run, "merge")["merged"] is False
     assert git.rev_parse(env.repo_path, "main") == main
 

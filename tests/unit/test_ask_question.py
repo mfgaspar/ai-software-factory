@@ -43,7 +43,24 @@ def test_shows_details_and_says_own_words_are_welcome(monkeypatch: pytest.Monkey
     assert answer == "confirm"
     assert "  • Required: problem, requirements." in out and "  • No approvers." in out
     assert "  2. also require solution/architecture.md" in out
-    assert hints == ["Answer: a number, your own words, or Enter for 'confirm'"]
+    assert hints == ["Answer (number or your own words, Enter = 1)"]
+
+
+def test_marks_the_recommendation_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    # skills often write "(recommended)" into the option itself
+    q = _setup(options=["confirm (recommended)", "other"], recommended="confirm (recommended)")
+    answer, out, hints = _ask(monkeypatch, q, "")
+    assert answer == "confirm (recommended)"
+    assert out.count("recommended") == 1 and "   1. confirm  recommended" in out
+    assert hints == ["Answer (number or your own words, Enter = 1)"]
+
+
+def test_long_options_wrap_under_their_text(monkeypatch: pytest.MonkeyPatch) -> None:
+    q = _setup(options=["word " * 40, "short"], recommended=None)
+    out = _ask(monkeypatch, q, "2")[1]
+    wrapped = [line for line in out.splitlines() if line.strip().startswith("word")]
+    assert len(wrapped) > 1 and all(line.startswith("      word") for line in wrapped)
+    assert "   1. word word" in out
 
 
 def test_takes_a_number_or_own_words(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -63,13 +80,13 @@ def test_approvals_take_only_their_options(monkeypatch: pytest.MonkeyPatch) -> N
     )
     answer, out, hints = _ask(monkeypatch, approval, "looks fine", "1")
     assert answer == "approve" and "Choose one of the numbered options." in out
-    assert hints[0] == "Answer: a number, or Enter to leave it for later"
+    assert hints[0] == "Answer (number, Enter = later)"
 
 
 def test_inline_questions_notify_once_per_questions_step(monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[str] = []
     monkeypatch.setattr(runs.notify, "notify", lambda message, **_: seen.append(message))
-    monkeypatch.setattr(runs, "ask_question", lambda q: "confirm")
+    monkeypatch.setattr(runs, "ask_question", lambda q, out=None: "confirm")
     progress = runs.Progress(False, Console(file=StringIO(), color_system=None))
     ask = runs._interaction(True, progress).ask_question
     assert ask is not None

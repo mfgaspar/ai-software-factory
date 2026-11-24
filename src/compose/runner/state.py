@@ -5,7 +5,10 @@ Files:
   inputs.json      resolved inputs
   state.json       status, progress and outputs needed to resume
   log.jsonl        append-only event log (also tailed by the API)
-  steps/<id>.json  one record per step execution
+  steps/<exec id>.json                 one record per step execution (totals, hooks, files, actions)
+  steps/<exec id>.actions.jsonl        what the step (or hook) did: messages, tool calls, results
+  steps/<exec id>.changes.jsonl        files the step (and each of its hooks) changed
+  steps/<exec id>.transcript.jsonl     the engine's whole session
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
+from compose.core.blobs import BlobStore, LocalBlobStore
 from compose.core.db import utcnow
 from compose.core.models import RunStatus
 
@@ -149,6 +153,50 @@ class RunFiles:
         if not self.log.exists():
             return []
         return [json.loads(line) for line in self.log.read_text().splitlines() if line]
+
+    def transcript(self, exec_id: str) -> Path:
+        """The engine's whole session for one step or hook execution."""
+        return self.steps_dir / f"{exec_id}.transcript.jsonl"
+
+    @property
+    def blobs(self) -> BlobStore:
+        """Where detail files are kept (the run folder; swap for an object store)."""
+        return LocalBlobStore(self.dir)
+
+    def actions_key(self, owner_id: str) -> str:
+        """What a step or hook execution (or ``run``) did, one JSON per line."""
+        return f"steps/{owner_id}.actions.jsonl"
+
+    def changes_key(self, step_exec_id: str) -> str:
+        """Files one step execution changed, hooks included (each line says which hook)."""
+        return f"steps/{step_exec_id}.changes.jsonl"
+
+    def append_jsonl(self, key: str, lines: list[dict[str, Any]]) -> None:
+        if lines:
+            self.blobs.append_lines(key, [json.dumps(x, default=str) for x in lines])
+
+    def read_jsonl(self, key: str) -> list[dict[str, Any]]:
+        found: list[dict[str, Any]] = []
+        for raw in self.blobs.read_lines(key):
+            try:
+                found.append(json.loads(raw))
+            except json.JSONDecodeError:
+                continue  # a write cut short by a kill
+        return found
+
+    def action_count(self) -> int:
+        """Actions recorded so far in this run (they are numbered run-wide)."""
+        blobs = self.blobs
+        keys = [k for k in blobs.list_keys("steps/") if k.endswith(".actions.jsonl")]
+        return sum(len(blobs.read_lines(k)) for k in keys)
+
+    def action_owners(self) -> list[str]:
+        keys = self.blobs.list_keys("steps/")
+        return [
+            k.removeprefix("steps/").removesuffix(".actions.jsonl")
+            for k in keys
+            if k.endswith(".actions.jsonl")
+        ]
 
     def write_step_record(self, exec_id: str, record: dict[str, Any]) -> None:
         atomic_write(self.steps_dir / f"{exec_id}.json", json.dumps(record, indent=2, default=str))

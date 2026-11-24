@@ -41,12 +41,15 @@ compose run ship-it -i spec="Show the build number in the footer"
 ```
 
 A workflow in `.compose/workflows/` is found by id from anywhere in the repo, and a repo's
-`quick`, `full-cycle` or `bugfix` replaces the built-in one. You can also run a file
+`quick`, `full-cycle` or `bugfix` replaces the built-in one. To use a workflow in every
+repo, put it in `~/.compose/workflows/<id>/` (`$COMPOSE_HOME/workflows/`) or install it
+with `compose workflow add --user <folder|file|url>`; a repo's copy still wins. You can also run a file
 directly (`compose run ./ship-it.yml`) or install one from elsewhere
 (`compose workflow add <folder|file|url>`).
 
 `command` steps run a skill on the engine, exactly as typing `/compose-plan` in Claude
-Code. `input.args` is what follows the slash command.
+Code. `input.args` is what follows the slash command. On Copilot (`engine: copilot`) the
+same skill runs with the same arguments.
 
 ## 2. Add a review gate and a model
 
@@ -91,9 +94,13 @@ steps:
 
 ## 3. Let implement run your tools
 
-In a background run nobody can approve Claude Code's permission prompts, so implement may
-only run what you allow. List those commands in `engine_options.allowed_tools`, fixed or
-from an input:
+In a background run nobody can answer Claude Code's permission prompts. compose runs Claude
+Code in auto mode (`permission_mode: auto`), where Claude Code approves or blocks each
+action itself, so implement can run your tests and build without a list. To pin exactly
+what runs, set another `permission_mode` (`acceptEdits` allows edits only) and list the
+commands in `engine_options.allowed_tools`, fixed or from an input. Copilot has the same
+three choices under other names (`assisted`, `allow-all`, `rules`) and takes the same
+`allowed_tools` list:
 
 ```yaml
 schema_version: "1.0"
@@ -235,7 +242,8 @@ compose cost --run <run>              # per step, hooks included
   included.
 - A run keeps the exact definition it started with, so editing a workflow never changes a
   run that is under way or paused.
-- Steps share one worktree, and nothing is committed between them. Add a `shell` step or
-  hook (`git add -A && git commit -m ...`) if you want commits.
+- Steps share one worktree, and nothing is committed between them; compose commits the
+  worktree on the feature branch once, when the run stops. Add a `shell` step or hook
+  (`git add -A && git commit -m ...`) if you want a commit per step.
 - Use `{{ context.feature.dir }}` for the feature's specs folder, and `steps.<id>.cost_usd`
   or `steps.<id>.changes.files` to branch on what a step did.

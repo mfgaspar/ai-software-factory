@@ -19,7 +19,7 @@ from compose.runner.errors import RunError
 
 WORKTREE_NAME = "clarity"
 DEFAULT_BRANCH = ClarityConfig().branch
-CLARITY_PATHS = (".clarity", ".compose/memory/constitution.md")
+CLARITY_PATHS = (".clarity", ".compose/memory")
 GUARDED_PATHS = (".clarity", ".compose/memory")  # must be clean in a checked-out default branch
 
 

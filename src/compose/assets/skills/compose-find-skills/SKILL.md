@@ -78,6 +78,15 @@ For example:
 2. **Source reputation** — Official sources (`vercel-labs`, `anthropics`, `microsoft`) are more trustworthy than unknown authors.
 3. **GitHub stars** — Check the source repository. A skill from a repo with <100 stars should be treated with skepticism.
 
+### Step 4b: Leave Out Skills That Set the Process
+
+This project is spec-driven: compose's own skills decide how the work is done (specify,
+plan, tasks, implement, converge). Suggest skills about the stack: a framework, a library,
+a language, a tool. Do not suggest or install a skill that brings its own way of working,
+such as test-driven or behaviour-driven development, test-first, planning, specification,
+brainstorming, review or git workflows, however popular it is. It would pull against the
+steps that run after it.
+
 ### Step 5: Present Options to the User
 
 When you find relevant skills, present them to the user with:

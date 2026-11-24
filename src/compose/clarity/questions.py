@@ -96,22 +96,36 @@ def _as_text(value: Any) -> Any:
     return str(value) if isinstance(value, int | float) and not isinstance(value, bool) else value
 
 
+_LABEL = re.compile(r"\s*\((?:recommended|recommendation)\)\s*$", re.IGNORECASE)
+
+
+def _unlabel(value: Any) -> Any:
+    """``"Confirm (recommended)"`` -> ``"Confirm"``; anything else unchanged."""
+    if not isinstance(value, str):
+        return value
+    while _LABEL.search(value):
+        value = _LABEL.sub("", value)
+    return value
+
+
 def _repair(item: Any) -> None:
     """Undo the usual slips of a hand-written entry, in place, so a re-save persists the fix.
 
     Numbers in ``options`` and ``recommended`` become text. An unquoted flow list such as
     ``[Yes, unittest per command, Something else]`` splits at its commas; when the
     ``recommended`` text equals consecutive items joined with ``", "``, they are joined back
-    into the one option it names.
+    into the one option it names. A ``(recommended)`` label written into an option or into
+    ``recommended`` is dropped: ``recommended`` already says which option it is, and the
+    terminal marks it.
     """
     if not isinstance(item, dict):
         return
     if "recommended" in item:
-        item["recommended"] = _as_text(item["recommended"])
+        item["recommended"] = _unlabel(_as_text(item["recommended"]))
     options = item.get("options")
     if not isinstance(options, list):
         return
-    options = [_as_text(o) for o in options]
+    options = [_unlabel(_as_text(o)) for o in options]
     recommended = item.get("recommended")
     if isinstance(recommended, str) and recommended not in options and ", " in recommended:
         for start in range(len(options)):

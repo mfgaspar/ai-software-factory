@@ -15,6 +15,16 @@ if TYPE_CHECKING:
     from compose.runner.runner import RunContext
 
 
+def _approving(options: list[str]) -> str | None:
+    """The option that says yes: ``approve``, else the first one that isn't ``reject``
+    (``install``). None when the gate has no reject option to tell yes from no."""
+    if "approve" in options:
+        return "approve"
+    if REJECT in options:
+        return next((o for o in options if o != REJECT), None)
+    return None
+
+
 async def execute(rc: RunContext, step: GateStep, row: StepExec, scope: Scope) -> Outcome:
     key = scope.key(step.id)
     message = rc.render_text(step.message, scope)
@@ -23,8 +33,13 @@ async def execute(rc: RunContext, step: GateStep, row: StepExec, scope: Scope) -
         value = rc.run.inputs.get(step.verdict_input)
         if value not in (None, ""):
             choice = str(value)
-    ask = rc.runner.interaction.ask_gate
-    if choice is None and rc.runner.interaction.interactive and ask is not None:
+    interaction = rc.runner.interaction
+    if choice is None and interaction.auto_approve:
+        choice = _approving(step.options)
+        if choice is not None and interaction.on_auto_approve is not None:
+            interaction.on_auto_approve(message, choice)
+    ask = interaction.ask_gate
+    if choice is None and interaction.interactive and ask is not None:
         while choice not in step.options:
             choice = await asyncio.to_thread(ask, message, list(step.options))
     if choice is None:

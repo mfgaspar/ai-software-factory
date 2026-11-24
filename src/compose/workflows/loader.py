@@ -1,6 +1,7 @@
 """Loading workflow definitions and resolving them by id.
 
-Resolution order for an id: the repo's ``.compose/workflows/<id>/``, then built-ins.
+Resolution order for an id: the repo's ``.compose/workflows/<id>/``, then the user's
+``$COMPOSE_HOME/workflows/<id>/``, then built-ins.
 A path to a ``.yml`` file or a workflow folder is loaded directly.
 """
 
@@ -15,13 +16,21 @@ import httpx
 import yaml
 from pydantic import ValidationError
 
+from compose.core.home import home_root
 from compose.workflows.schema import BUILTIN_TRACKING_HOOKS, Workflow
 
 BUILTIN_DIR = Path(__file__).parent / "builtins"
 REPO_WORKFLOWS_DIR = Path(".compose") / "workflows"
 DEFINITION_NAMES = ("workflow.yml", "workflow.yaml")
+USER_WORKFLOWS_DIRNAME = "workflows"
 
-Source = Literal["builtin", "repo", "file"]
+Source = Literal["builtin", "user", "repo", "file"]
+Scope = Literal["repo", "user"]
+
+
+def user_workflows_dir() -> Path:
+    """The user's workflow folder, shared by every repo: ``$COMPOSE_HOME/workflows``."""
+    return home_root() / USER_WORKFLOWS_DIRNAME
 
 
 class WorkflowError(Exception):
@@ -106,12 +115,13 @@ def _candidates(repo_root: Path | None) -> list[tuple[Path, Source]]:
     dirs: list[tuple[Path, Source]] = []
     if repo_root is not None:
         dirs.append((repo_root / REPO_WORKFLOWS_DIR, "repo"))
+    dirs.append((user_workflows_dir(), "user"))
     dirs.append((BUILTIN_DIR, "builtin"))
     return dirs
 
 
 def resolve(ref: str, repo_root: Path | None) -> LoadedWorkflow:
-    """Load a workflow by id (repo first, then built-in) or by path."""
+    """Load a workflow by id (repo first, then user, then built-in) or by path."""
     if _looks_like_path(ref):
         return load_path(Path(ref))
     for base, source in _candidates(repo_root):
@@ -136,7 +146,7 @@ class WorkflowListing:
 
 
 def list_workflows(repo_root: Path | None) -> list[WorkflowListing]:
-    """All workflows; a repo workflow shadows a built-in with the same id."""
+    """All workflows; an earlier source shadows a later one with the same id."""
     seen: set[str] = set()
     out: list[WorkflowListing] = []
     for base, source in _candidates(repo_root):
@@ -155,9 +165,20 @@ def list_workflows(repo_root: Path | None) -> list[WorkflowListing]:
     return out
 
 
-def add_workflow(repo_root: Path, source: str, *, force: bool = False) -> LoadedWorkflow:
-    """Install a workflow (folder, file or URL of a YAML file) into the repo."""
-    target_root = repo_root / REPO_WORKFLOWS_DIR
+def install_dir(scope: Scope, repo_root: Path | None) -> Path:
+    """Where ``compose workflow add`` installs for a scope."""
+    if scope == "user":
+        return user_workflows_dir()
+    if repo_root is None:
+        raise WorkflowError("Run this inside a git repo, or pass --user")
+    return repo_root / REPO_WORKFLOWS_DIR
+
+
+def add_workflow(
+    repo_root: Path | None, source: str, *, force: bool = False, scope: Scope = "repo"
+) -> LoadedWorkflow:
+    """Install a workflow (folder, file or URL of a YAML file) into the repo or user folder."""
+    target_root = install_dir(scope, repo_root)
     if source.startswith(("http://", "https://")):
         try:
             response = httpx.get(source, follow_redirects=True, timeout=30)
@@ -180,7 +201,7 @@ def add_workflow(repo_root: Path, source: str, *, force: bool = False) -> Loaded
         else:
             target.mkdir(parents=True)
             shutil.copy2(loaded.path, target / "workflow.yml")
-    return load_path(target, "repo")
+    return load_path(target, scope)
 
 
 def _prepare_target(target: Path, force: bool) -> None:
@@ -190,12 +211,13 @@ def _prepare_target(target: Path, force: bool) -> None:
         shutil.rmtree(target)
 
 
-def remove_workflow(repo_root: Path, workflow_id: str) -> Path:
-    target = repo_root / REPO_WORKFLOWS_DIR / workflow_id
+def remove_workflow(repo_root: Path | None, workflow_id: str, *, scope: Scope = "repo") -> Path:
+    base = install_dir(scope, repo_root)
+    target = base / workflow_id
     if not target.is_dir():
         if (BUILTIN_DIR / workflow_id).is_dir():
             raise WorkflowError(f"{workflow_id!r} is built in and cannot be removed")
-        raise WorkflowError(f"No installed workflow {workflow_id!r} in {repo_root}")
+        raise WorkflowError(f"No installed workflow {workflow_id!r} in {base}")
     shutil.rmtree(target)
     return target
 

@@ -179,6 +179,16 @@ Rarely, failure analysis has nothing to work on: a throwaway experiment where no
 harmed. Propose N/A with that evidence; only on the user's agreement set `status: n/a` and a
 `reason:` in `failures.md`. Never decide N/A alone.
 
+## Questions
+
+Ask a person only what a person must answer: their intent and priorities, facts only they
+hold (real users, numbers, deadlines, owners), a trade-off the material leaves open that is
+theirs to own, a conflict the sources can't settle, and confirmations. Anything you can work
+out from the sources, the code, the other `.clarity/` documents, earlier answers or
+established practice, decide yourself: write it, mark it as inferred with where it came
+from, and name it in your summary so the person can correct it. `/clarity` sets this out in
+**Ask a person only what needs a person**.
+
 ## Finish
 
 - Remove every placeholder (`[TBD…]`, `[To be determined…]`, bracketed prompts) from the
@@ -188,8 +198,9 @@ harmed. Propose N/A with that evidence; only on the user's agreement set `status
 - If you edited a `complete` document (for example adding a harmed stakeholder to
   `goal/stakeholders.md`), leave its `status` and `reviewed` alone and tell the user which
   documents you touched.
-- With no one to ask (`auto` mode), skip the interactive loop: make your best grouping and
-  list the uncertain calls as open gaps.
+- Unattended (`/clarity` passed `auto`, `COMPOSE_RUN_ID` is set, or nobody is present): ask nothing. Don't wait for an answer in
+  step 4 and skip step 5: make your best grouping, give every remaining raw failure a mode
+  or a reason for rejecting it, and list the uncertain calls as open gaps.
 - **When `/clarity` called you**: don't mark anything complete. Return the draft, the modes
   with no plan, and the open gaps; `clarity-failure-management` runs next.
 - **When run directly**: show a short summary and the gaps. If every mode already has a
@@ -199,6 +210,3 @@ harmed. Propose N/A with that evidence; only on the user's agreement set `status
   re-confirms later). A body hash is the output of the manifest's `hash_command` with `FILE`
   replaced by the quoted path; never compute it any other way. Otherwise keep
   `status: draft` and suggest `/clarity-failure-management` next.
-
-Adapted from microsoft/clarity-agent (processes/failure-analysis.md and
-processes/failure-reasoning-guidelines.md), MIT License. See LICENSE.txt.

@@ -115,17 +115,13 @@ def test_malformed_verdict_file_reads_as_none() -> None:
 # ------------------------------------------------------------------ constitution
 
 
-def test_stamp_is_idempotent(tmp_path: Path) -> None:
-    path = tmp_path / "constitution.md"
-    path.write_text("# Constitution\n\nBe kind.\n")
-    constitution.stamp(path, "abc")
-    once = path.read_text()
-    assert once == "<!-- generated-from-clarity: abc -->\n# Constitution\n\nBe kind.\n"
-    constitution.stamp(path, "abc")
-    assert path.read_text() == once
-    constitution.stamp(path, "def")
-    assert path.read_text() == once.replace("abc", "def")
-    assert constitution.read_text(path.read_text()) == "def"
+def test_marker_round_trip_and_legacy() -> None:
+    text = f"{constitution.marker('abc')}\n# Project memory\n"
+    assert text.startswith("<!-- memory-index: abc -->\n")
+    assert constitution.read_text(text) == "abc" and not constitution.is_legacy(text)
+    legacy = "<!-- generated-from-clarity: abc -->\n# Constitution\n"
+    assert constitution.read_text(legacy) is None and constitution.is_legacy(legacy)
+    assert constitution.read_text("# Constitution\n") is None
 
 
 def test_constitution_read_ref(git_repo: Path, run_git: Git) -> None:
@@ -135,6 +131,6 @@ def test_constitution_read_ref(git_repo: Path, run_git: Git) -> None:
     run_git(git_repo, "add", "-A")
     run_git(git_repo, "commit", "-q", "-m", "hand-written")
     assert constitution.read_ref(git_repo, "main") is None
-    constitution.stamp(path, "f" * 64)
+    path.write_text(f"{constitution.marker('f' * 64)}\n# Project memory\n")
     run_git(git_repo, "commit", "-q", "-am", "generated")
     assert constitution.read_ref(git_repo, "main") == "f" * 64

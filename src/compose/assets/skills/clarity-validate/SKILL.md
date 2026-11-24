@@ -1,12 +1,12 @@
 ---
 name: clarity-validate
 description: Check that every mandatory clarity document in .clarity/ is complete, validly not applicable, unblocked and approved, and report PASS or FAIL with what is left and who must act. Reads only; changes nothing.
-argument-hint: "[document paths to check, default all]"
+argument-hint: "[document paths to report on, default all]"
 ---
 
 # Validate the clarity documents
 
-Documents to check (empty means all of them):
+Documents to report on (empty means all of them):
 
 ```text
 $ARGUMENTS
@@ -24,6 +24,8 @@ same way every time: the point is that two runs on the same files give the same 
    - `documents`: add each custom document. It needs a `template` that exists, `depends_on`
      paths that exist in the manifest or in `documents`, and `required_sections`. Custom
      documents are mandatory unless `mandatory: false`, and allow N/A.
+   - A shipped document with `mandatory: false` (such as `failures/fmea.md`) is optional:
+     leave it out of the check unless `mandatory.add` names it.
    - `mandatory.add`: make those documents mandatory. `mandatory.remove`: drop them from the
      check. Removing a path listed in the manifest's `never_na` is a **config error**.
    - `not_applicable`: a map of path → reason, treated as if that document said `status: n/a`
@@ -45,15 +47,16 @@ hash any other way.
 
 ## 3. Check each document
 
-For each mandatory document in order (or only those named in the arguments), assign the
+For each mandatory document in order, assign the
 **first** state that applies, reading the document's front matter (the YAML between the first
 two `---` lines):
 
 1. **missing**: the file doesn't exist under `.clarity/`.
 2. **n/a**: `status: n/a`, or listed in config `not_applicable`. It's valid only if the reason
    is non-empty and the document allows N/A (`allow_na`, and not in `never_na`). Otherwise
-   report **invalid-n/a**, which fails. When the config and the front matter disagree, the
-   front matter wins and you add a note about the mismatch.
+   report **invalid-n/a**, which fails. When the config lists a document and its front
+   matter has another status, the front matter wins: go on down this list with that status,
+   and note the mismatch under **Config**.
 3. **draft**: any of the following.
    - `status` is `draft`, missing, or unknown.
    - Any of the manifest's `placeholder_markers` appears anywhere in the body.
@@ -72,6 +75,8 @@ two `---` lines):
    decisions) its ADRs. For each listed name, look for an entry in the document's `approvals`
    with that `by` and a `hash` equal to the document's current body hash. Name every approver
    without a valid approval. An approval with an old hash is **outdated**, not missing.
+   An ADR's approvals are in its own front matter, against its own body hash; a
+   `superseded` ADR needs none.
    An answered approval question in `.clarity/questions.yml` is also a valid approval, with
    the same hash rule: `kind: approval`, not `obsolete`, `answer: approve`, `answered_by`
    equal to its `approver` and to the listed name (`answered_at` is its date), and the hash
@@ -127,3 +132,6 @@ PASS means no config error, and every mandatory document is either complete or v
 with nothing missing, draft, edited, blocked, unapproved, or invalid-n/a, and nothing stale
 when `stale_fails` is true. `<n>` counts the documents that fail, with each config error
 counted as one. Print nothing after that line.
+
+When the arguments name documents, print only their rows, but check every document and
+count them all: the last line is always the verdict on the whole foundation.

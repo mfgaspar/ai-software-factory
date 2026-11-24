@@ -38,15 +38,29 @@ class ClarityConfig(_Section):
     branch: str = Field(default="clarity", min_length=1)  # where clarity runs work
 
 
+class FeaturesConfig(_Section):
+    # a completed feature run fast-forwards the default branch to the feature branch
+    merge: bool = True
+
+
 class NotificationsConfig(_Section):
     enabled: bool = True  # desktop notifications when a run waits for a person or ends
+
+
+class TelemetryConfig(_Section):
+    # export runs as OpenTelemetry traces and metrics (needs compose-sdd[otel]); where they go
+    # is set by the standard OTEL_EXPORTER_OTLP_* environment variables
+    enabled: bool = False
+    service_name: str = "compose"
 
 
 class Config(_Section):
     server: ServerConfig = Field(default_factory=ServerConfig)
     defaults: DefaultsConfig = Field(default_factory=DefaultsConfig)
     clarity: ClarityConfig = Field(default_factory=ClarityConfig)
+    features: FeaturesConfig = Field(default_factory=FeaturesConfig)
     notifications: NotificationsConfig = Field(default_factory=NotificationsConfig)
+    telemetry: TelemetryConfig = Field(default_factory=TelemetryConfig)
     # default engine_options per engine, under the workflow's and step's own
     engines: dict[str, dict[str, Any]] = Field(default_factory=dict)
 

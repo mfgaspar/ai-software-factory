@@ -92,7 +92,7 @@ def test_check(cli: Callable[..., Result], git_repo: Path, monkeypatch: pytest.M
     checks = {c["name"]: c for c in json.loads(before.output)["checks"]}
     assert checks["git"]["ok"] and checks["engine claude"]["ok"]
     assert not checks["repository registered"]["ok"]
-    assert checks["repository registered"]["fix"] == "run `compose init --engine claude` here"
+    assert checks["repository registered"]["fix"] == "run `compose init` here"
     assert checks["repository initialized"]["required"] is False
 
     assert cli("init").exit_code == 0

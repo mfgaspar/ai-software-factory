@@ -44,6 +44,7 @@ CLARITY_SKILLS = [
     "clarity-failure-analysis",
     "clarity-failure-brainstorm",
     "clarity-failure-management",
+    "clarity-fmea",
     "clarity-message",
     "clarity-prd",
     "clarity-problem",

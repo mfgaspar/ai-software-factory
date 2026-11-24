@@ -12,23 +12,16 @@ R = TypeVar("R", bound=Record)
 
 
 def insert(db: Database, record: R) -> R:
-    """Insert a record; auto-increment ids are filled in on the returned copy."""
+    """Insert a record."""
     row = record.to_row()
-    if row.get(record.PK) is None:
-        row.pop(record.PK, None)
     cols = ", ".join(row)
     marks = ", ".join("?" for _ in row)
-    with db.transaction() as conn:
-        cur = conn.execute(
-            f"INSERT INTO {record.TABLE} ({cols}) VALUES ({marks})", tuple(row.values())
-        )
-    if getattr(record, record.PK) is None:
-        return record.model_copy(update={record.PK: cur.lastrowid})
+    db.execute(f"INSERT INTO {record.TABLE} ({cols}) VALUES ({marks})", tuple(row.values()))
     return record
 
 
 def get(db: Database, cls: type[R], pk: Any) -> R | None:
-    row = db.conn.execute(f"SELECT * FROM {cls.TABLE} WHERE {cls.PK} = ?", (pk,)).fetchone()
+    row = db.execute(f"SELECT * FROM {cls.TABLE} WHERE {cls.PK} = ?", (pk,)).fetchone()
     return None if row is None else cls.from_row(row)
 
 
@@ -37,10 +30,7 @@ def update(db: Database, record: R) -> None:
     row = record.to_row()
     pk = row.pop(record.PK)
     sets = ", ".join(f"{col} = ?" for col in row)
-    with db.transaction() as conn:
-        cur = conn.execute(
-            f"UPDATE {record.TABLE} SET {sets} WHERE {record.PK} = ?", (*row.values(), pk)
-        )
+    cur = db.execute(f"UPDATE {record.TABLE} SET {sets} WHERE {record.PK} = ?", (*row.values(), pk))
     if cur.rowcount != 1:
         raise LookupError(f"{record.TABLE} row {pk!r} not found")
 
@@ -58,4 +48,4 @@ def select(
         sql += f" WHERE {where}"
     if order_by:
         sql += f" ORDER BY {order_by}"
-    return [cls.from_row(row) for row in db.conn.execute(sql, tuple(params))]
+    return [cls.from_row(row) for row in db.execute(sql, tuple(params))]

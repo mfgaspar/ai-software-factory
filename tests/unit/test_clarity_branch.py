@@ -75,7 +75,10 @@ def test_commit_paths_only_commits_clarity_files(home: Home, repo: Repo, run_git
     (workdir / ".clarity" / "questions.yml").write_text("[]\n")
     (workdir / ".compose" / "memory").mkdir(parents=True)
     (workdir / ".compose" / "memory" / "constitution.md").write_text("# Constitution\n")
-    (workdir / ".compose" / "memory" / "notes.md").write_text("not mine\n")
+    (workdir / ".compose" / "memory" / "goal").mkdir()
+    (workdir / ".compose" / "memory" / "goal" / "problem.md").write_text("# Problem\n")
+    (workdir / ".compose" / "templates").mkdir()
+    (workdir / ".compose" / "templates" / "spec.md").write_text("not mine\n")
     (workdir / "README.md").write_text("edited\n")
     (workdir / "other.txt").write_text("untracked\n")
     run_git(workdir, "add", "other.txt")  # staged by someone else: still not committed
@@ -86,6 +89,7 @@ def test_commit_paths_only_commits_clarity_files(home: Home, repo: Repo, run_git
     assert sorted(filter(None, committed[1:])) == [
         ".clarity/questions.yml",
         ".compose/memory/constitution.md",
+        ".compose/memory/goal/problem.md",
     ]
     assert set(git.changed_paths(workdir)) >= {"README.md", "other.txt"}
     assert branch.commit_paths(workdir, "again") is None
@@ -139,3 +143,17 @@ def test_pending_when_default_diverged(
     assert git.rev_parse(git_repo, "main") == moved
     assert git.is_ancestor(git_repo, moved, "clarity")  # merged into clarity for re-checking
     assert branch.merge_into_default(repo, workdir).merged  # next time it fast-forwards
+
+
+def test_commit_paths_commits_a_removed_memory_file(home: Home, repo: Repo, run_git: Git) -> None:
+    workdir = branch.ensure_worktree(home, repo)
+    folder = workdir / ".compose" / "memory" / "product"
+    folder.mkdir(parents=True)
+    (folder / "prd.md").write_text("# PRD\n")
+    (workdir / ".compose" / "memory" / "constitution.md").write_text("# Index\n")
+    assert branch.commit_paths(workdir, "clarity: one") is not None
+    (folder / "prd.md").unlink()
+    assert branch.commit_paths(workdir, "clarity: two") is not None
+    tracked = run_git(workdir, "ls-files", "--", ".compose/memory").splitlines()
+    assert tracked == [".compose/memory/constitution.md"]
+    assert git.changed_paths(workdir) == []

@@ -1,6 +1,6 @@
 ---
 name: clarity-failure-management
-description: Decide with the user what to do about each analysed failure mode. Writes its management plan (strategy, interventions, accepted risk, monitoring), summarise plans in failures.md, capture induced failures, and revise the solution or architecture when a plan changes them. Use after failure analysis.
+description: Decide with the user what to do about each analysed failure mode. Write its management plan (strategy, interventions, accepted risk, monitoring), summarise the plans in failures.md, capture induced failures, and revise the solution or architecture when a plan changes them. Use after failure analysis.
 argument-hint: "[failure modes to plan, default every one without a plan]"
 ---
 
@@ -127,6 +127,16 @@ care only about meaningful harm to non-adversarial stakeholders.
 9. **Summarise**: per mode, severity, strategy in a sentence and residual risk; shared
    mechanisms; conflicts that need a decision; induced failures written; documents edited.
 
+## Questions
+
+Ask a person only what a person must answer: their intent and priorities, facts only they
+hold (real users, numbers, deadlines, owners), a trade-off the material leaves open that is
+theirs to own, a conflict the sources can't settle, and confirmations. Anything you can work
+out from the sources, the code, the other `.clarity/` documents, earlier answers or
+established practice, decide yourself: write it, mark it as inferred with where it came
+from, and name it in your summary so the person can correct it. `/clarity` sets this out in
+**Ask a person only what needs a person**.
+
 ## Rules
 
 - No plan aims for zero residual risk; that breeds over-engineering and new failures. Name
@@ -136,8 +146,9 @@ care only about meaningful harm to non-adversarial stakeholders.
 - Plans evolve: re-run this skill when the system, threats or experience change.
 - Remove every placeholder (`[TBD…]`, `[To be determined…]`, bracketed prompts) from the
   sections you fill. Keep HTML comments only where they help.
-- With no one to ask (`auto` mode), draft a plan from the most defensible strategy and list
-  every unconfirmed strategy and accepted risk as an open gap.
+- Unattended (`/clarity` passed `auto`, `COMPOSE_RUN_ID` is set, or nobody is present): ask nothing. Draft each plan from the most
+  defensible strategy, without waiting for the user's view, and list every unconfirmed
+  strategy and accepted risk as an open gap.
 
 ## Finish
 
@@ -152,6 +163,3 @@ care only about meaningful harm to non-adversarial stakeholders.
   the quoted path; never compute it any other way. Then suggest the next step: analysis
   again if induced failures were written, otherwise `/clarity` to continue (architecture
   comes next).
-
-Adapted from microsoft/clarity-agent (processes/failure-management.md and
-processes/failure-reasoning-guidelines.md), MIT License. See LICENSE.txt.

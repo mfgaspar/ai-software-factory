@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
 from datetime import datetime
 from enum import StrEnum
 from typing import Any, ClassVar, Self
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from compose.core.db import utcnow
+from compose.core.db import format_ts, utcnow
 
 
 class RunStatus(StrEnum):
@@ -61,16 +60,19 @@ class Record(BaseModel):
     def to_row(self) -> dict[str, Any]:
         row: dict[str, Any] = {}
         for key, value in self.model_dump(mode="json").items():
-            if key in self.JSON_FIELDS:
+            raw = getattr(self, key, None)
+            if isinstance(raw, datetime):
+                row[key] = format_ts(raw)
+            elif key in self.JSON_FIELDS:
                 row[f"{key}_json"] = None if value is None else json.dumps(value)
             else:
                 row[key] = value
         return row
 
     @classmethod
-    def from_row(cls, row: Mapping[str, Any]) -> Self:
+    def from_row(cls, row: Any) -> Self:
         data: dict[str, Any] = {}
-        for key in row.keys():  # noqa: SIM118 - sqlite3.Row only supports .keys()
+        for key in row.keys():  # noqa: SIM118 - Row only supports .keys()
             value = row[key]
             if key.endswith("_json") and key[:-5] in cls.JSON_FIELDS:
                 data[key[:-5]] = None if value is None else json.loads(value)
@@ -132,6 +134,7 @@ class Run(Record):
     status: RunStatus = RunStatus.CREATED
     parent_run_id: str | None = None
     parent_exec_id: str | None = None
+    started_by: str | None = None
     current_step_id: str | None = None
     inputs: dict[str, Any] = Field(default_factory=dict)
     outputs: dict[str, Any] | None = None
@@ -177,34 +180,3 @@ class HookExec(Record, Metrics):
     ended_at: datetime | None = None
     duration_ms: int | None = None
     error: str | None = None
-
-
-class Action(Record):
-    TABLE: ClassVar[str] = "actions"
-
-    id: int | None = None
-    run_id: str
-    step_exec_id: str | None = None
-    hook_exec_id: str | None = None
-    seq: int
-    kind: str
-    tool_name: str | None = None
-    input_summary: str | None = None
-    result_summary: str | None = None
-    is_error: bool = False
-    duration_ms: int | None = None
-    ts: datetime = Field(default_factory=utcnow)
-
-
-class FileChange(Record):
-    TABLE: ClassVar[str] = "file_changes"
-
-    id: int | None = None
-    run_id: str
-    step_exec_id: str
-    hook_exec_id: str | None = None
-    path: str
-    old_path: str | None = None
-    status: FileStatus
-    added: int | None = None
-    removed: int | None = None

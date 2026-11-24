@@ -20,7 +20,7 @@ approvals: []
 
 ## Why this approach
 
-[TBD — how it meets the problem and each key requirement (cite FR/NFR IDs).]
+[TBD — how it meets the problem and each key requirement (cite NFR, CON and STD IDs).]
 
 ## Alternatives considered
 

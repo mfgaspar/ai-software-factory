@@ -156,7 +156,11 @@ def test_run_lifecycle_and_reports(client: TestClient, repo: str, git_repo: Path
     assert detail["feature"] == "001-todo"
     assert [s["step_id"] for s in detail["steps"]] == ["build", "check"]
     assert detail["totals"]["cost_usd"] == pytest.approx(0.3)
-    assert detail["totals"]["changes"] == {"files": 1, "added": 2, "removed": 0}
+    assert detail["totals"]["changes"] == {
+        "files": 2,
+        "added": 2,
+        "removed": 0,
+    }  # app.py counts once per step
 
     build = detail["steps"][0]
     record = ok(client.get(f"/runs/{run_id}/steps/{build['exec_id']}"))
@@ -316,7 +320,7 @@ async def test_stream_waits_for_new_events(tmp_path: Path, db: Any) -> None:
     with log.open("a") as fh:
         fh.write("}\n")
     assert (await gen.__anext__()).startswith("id: 2\nevent: b\n")
-    db.conn.execute("UPDATE runs SET status = 'completed' WHERE id = 'run_1'")
+    db.execute("UPDATE runs SET status = 'completed' WHERE id = 'run_1'")
     assert (await gen.__anext__()).startswith("event: end")
 
 
@@ -365,7 +369,7 @@ def test_shutdown_leaves_runs_resumable(
         ok(client.post("/repos", json={"path": str(git_repo)}), 201)
         run_id = start(client, "repo", "demo", inputs={"spec": "slow"})
         wait(client, run_id, "running")
-    row = db.conn.execute("SELECT status, error FROM runs WHERE id = ?", (run_id,)).fetchone()
+    row = db.execute("SELECT status, error FROM runs WHERE id = ?", (run_id,)).fetchone()
     assert row[0] == "failed" and "stopped unexpectedly" in row[1]
 
     fake.scripts = {"build slow": Script([Act(say="quick this time")])}

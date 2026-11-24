@@ -27,6 +27,10 @@ placeholder_markers:
   - "No failure modes have been analyzed yet"
   - "No decisions have been recorded yet"
 
+# A document with `mandatory: false` is optional: it is in the effective manifest only when
+# .clarity/config.yml names it under `mandatory.add`. Otherwise it is not created, drafted
+# or checked.
+
 # Documents that can never be marked not applicable or removed from the mandatory set.
 never_na:
   - goal/problem.md
@@ -41,6 +45,7 @@ walk_order:
   - goal/open-questions.md
   - solution/solution.md
   - failures/failures.md
+  - failures/fmea.md
   - solution/architecture.md
   - decisions/index.md
   - product/prd.md
@@ -58,7 +63,7 @@ stages:
   - name: solution
     documents: [solution/solution.md]
   - name: failures
-    documents: [failures/failures.md]
+    documents: [failures/failures.md, failures/fmea.md]
   - name: architecture
     documents: [solution/architecture.md, decisions/index.md]
   - name: product
@@ -82,6 +87,10 @@ documents:
     required_sections: [Problem, Why This Matters, Scope, Success Criteria]
     depends_on: []
     produced_by: clarity-problem
+    memory:
+      summary: "The problem being solved, why it matters, what is in and out of scope, and the success criteria."
+      read_at: [specify, clarify, analyze]
+      read_when: ""
 
   goal/stakeholders.md:
     template: goal/stakeholders.md
@@ -90,6 +99,10 @@ documents:
     required_sections: [Stakeholders]
     depends_on: [goal/problem.md]
     produced_by: clarity-problem
+    memory:
+      summary: "Who uses the application, who is affected by it and who might misuse it."
+      read_at: [specify, clarify, analyze]
+      read_when: ""
 
   goal/requirements.md:
     template: goal/requirements.md
@@ -98,6 +111,10 @@ documents:
     required_sections: [Non-functional requirements, Constraints, Standards]
     depends_on: [goal/problem.md, goal/stakeholders.md]
     produced_by: clarity-problem
+    memory:
+      summary: "The rules every feature must meet: non-functional requirements (NFR), constraints (CON) and standards (STD)."
+      read_at: [specify, clarify, plan, tasks, implement, analyze]
+      read_when: ""
 
   goal/open-questions.md:
     template: goal/open-questions.md
@@ -107,6 +124,10 @@ documents:
     required_sections: [Questions]
     depends_on: [goal/problem.md]
     produced_by: clarity-problem
+    memory:
+      summary: "Questions about the application that are still open, and whether each one blocks work."
+      read_at: [analyze]
+      read_when: "the feature touches an area an open question covers"
 
   solution/solution.md:
     template: solution/solution.md
@@ -115,6 +136,10 @@ documents:
     required_sections: [Approach, Why this approach, Alternatives considered, Risks and assumptions]
     depends_on: [goal/problem.md, goal/requirements.md, goal/open-questions.md]
     produced_by: clarity-solution
+    memory:
+      summary: "The chosen approach, why it was chosen, the alternatives set aside, and the risks and assumptions."
+      read_at: [plan, analyze]
+      read_when: ""
 
   failures/failures.md:
     template: failures/failures.md
@@ -124,6 +149,25 @@ documents:
     depends_on: [solution/solution.md, solution/architecture.md]
     produced_by: clarity-failure-analysis
     stage_skills: [clarity-failure-brainstorm, clarity-failure-analysis, clarity-failure-management]
+    memory:
+      summary: "Failure modes, the patterns across them, and the mitigations features must implement."
+      read_at: [plan, tasks, analyze]
+      read_when: ""
+
+  # Optional: not part of a project unless .clarity/config.yml lists it under
+  # `mandatory.add`. A worksheet generated from the failure documents, for projects that
+  # must show an FMEA (regulated or safety-related work, audits).
+  failures/fmea.md:
+    template: failures/fmea.md
+    mandatory: false
+    allow_na: true
+    required_sections: [Scope, Scales, Worksheet, Actions]
+    depends_on: [failures/failures.md]
+    produced_by: clarity-fmea
+    memory:
+      summary: "FMEA worksheet: each function's failure modes with effect, cause, current controls, severity and the recommended action."
+      read_at: [analyze]
+      read_when: "the feature changes a function listed in the worksheet"
 
   solution/architecture.md:
     template: solution/architecture.md
@@ -132,6 +176,10 @@ documents:
     required_sections: [Context, Components, Data flows, Deployment, Cross-cutting concerns, Threat model]
     depends_on: [solution/solution.md, failures/failures.md]
     produced_by: clarity-architecture
+    memory:
+      summary: "Components, data flows, deployment, cross-cutting concerns and the threat model."
+      read_at: [plan, implement, analyze]
+      read_when: ""
 
   decisions/index.md:
     template: decisions/index.md
@@ -143,6 +191,10 @@ documents:
     required_sections: [Decisions]
     depends_on: []
     produced_by: clarity-decision
+    memory:
+      summary: "The list of architecture decisions (ADRs) and the status of each."
+      read_at: [plan, analyze]
+      read_when: ""
 
   product/prd.md:
     template: product/prd.md
@@ -151,6 +203,10 @@ documents:
     required_sections: [Overview, Users and personas, Goals and metrics, Scope boundaries, Product principles]
     depends_on: [goal/problem.md, goal/stakeholders.md, goal/requirements.md, solution/solution.md]
     produced_by: clarity-prd
+    memory:
+      summary: "Product overview, personas, goals and metrics (G), scope boundaries and product principles."
+      read_at: [specify, clarify, analyze]
+      read_when: ""
 
   product/ux-standards.md:
     template: product/ux-standards.md
@@ -159,6 +215,10 @@ documents:
     required_sections: [Surfaces and navigation, Interaction patterns, Accessibility and localization, Design system, State conventions]
     depends_on: [product/prd.md, goal/requirements.md]
     produced_by: clarity-ux-standards
+    memory:
+      summary: "UI rules: surfaces and navigation, interaction patterns, accessibility, design system and states."
+      read_at: [analyze]
+      read_when: "the feature has a user interface"
 
   contracts/api.md:
     template: contracts/api.md
@@ -168,6 +228,10 @@ documents:
     required_sections: [Overview, Authentication, Conventions, Errors, Versioning]
     depends_on: [solution/architecture.md, goal/requirements.md]
     produced_by: clarity-api-contracts
+    memory:
+      summary: "API conventions: authentication, naming, errors and versioning, and any published spec to keep."
+      read_at: [analyze]
+      read_when: "the feature adds, changes or calls an API"
 
   data/data-model.md:
     template: data/data-model.md
@@ -176,6 +240,10 @@ documents:
     required_sections: [Core entities, Entity relationship diagram, Data rules, Migrations, Retention]
     depends_on: [solution/architecture.md, goal/requirements.md]
     produced_by: clarity-data-model
+    memory:
+      summary: "Core entities and their relationships, data rules, migrations and retention."
+      read_at: [analyze]
+      read_when: "the feature stores, changes or reads persistent data"
 
   ops/setup-guide.md:
     template: ops/setup-guide.md
@@ -184,6 +252,10 @@ documents:
     required_sections: [Prerequisites, Environments, Local setup, Configuration, Secrets handling, Troubleshooting]
     depends_on: [solution/architecture.md, contracts/api.md, data/data-model.md]
     produced_by: clarity-setup-guide
+    memory:
+      summary: "Environments, local setup, configuration and how secrets are handled."
+      read_at: [plan, tasks, analyze]
+      read_when: ""
 
   solution/solution-summary.md:
     template: solution/solution-summary.md
@@ -192,6 +264,10 @@ documents:
     required_sections: [Summary]
     depends_on: [solution/solution.md, solution/architecture.md]
     produced_by: clarity-architecture
+    memory:
+      summary: "A one-page summary of the solution and its architecture."
+      read_at: [analyze]
+      read_when: "you need a quick overview before opening the full documents"
 
   summary.md:
     template: summary.md
@@ -200,6 +276,26 @@ documents:
     required_sections: []
     depends_on: [goal/problem.md, goal/stakeholders.md, solution/solution.md]
     produced_by: clarity-message
+    memory:
+      summary: "The project in a few sentences, as told to someone new."
+      read_at: [analyze]
+      read_when: "you need the project's purpose in brief"
+
+# Publishing to .compose/memory/. After a clarity run, compose copies each document there
+# (the body, unchanged) and writes .compose/memory/constitution.md: an index with one row
+# per file saying what it holds and when a feature step reads it. Each document's `memory`
+# block above feeds its row: `read_at` lists the steps that always open the file
+# (specify, clarify, plan, tasks, implement, analyze) and `read_when` is a condition, in
+# plain words, for the other steps. The entries below are the rows for files that aren't
+# documents.
+memory:
+  adr:
+    read_at: [analyze]
+    read_when: "the feature touches this decision"
+  feature_ideas:
+    summary: "Feature ideas noted while the foundation was written. Suggestions, not rules."
+    read_at: [specify]
+    read_when: ""
 
 # Created with the protocol folder but never validated.
 companions:

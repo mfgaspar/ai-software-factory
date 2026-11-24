@@ -270,13 +270,13 @@
   "info": {
     "description": "Spec-driven development workflows with traceability and cost tracking.",
     "title": "compose",
-    "version": "0.2.0"
+    "version": "0.1.1"
   },
   "openapi": "3.1.0",
   "paths": {
     "/costs": {
       "get": {
-        "description": "Cost, tokens and changes grouped by step, run, feature, repo or day.",
+        "description": "Cost, tokens and changes grouped by step, run, feature, repo, day or user.",
         "operationId": "get_costs_costs_get",
         "parameters": [
           {
@@ -338,7 +338,8 @@
                 "run",
                 "feature",
                 "repo",
-                "day"
+                "day",
+                "user"
               ],
               "title": "Group By",
               "type": "string"

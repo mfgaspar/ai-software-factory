@@ -18,8 +18,10 @@ $ARGUMENTS
 
 1. Run `compose feature paths --json`. Read `spec_file`, `plan_file` and `tasks_file` (all
    three required — if one is missing, name the skill that creates it and stop) and the
-   constitution at `constitution_file` if it exists. When the JSON's `clarity` is not
-   null, also read the guide at `clarity.guide` and the clarity documents it lists.
+   constitution at `constitution_file` if it exists. When it is a memory index (its first
+   line is `<!-- memory-index: … -->`), also read the guide at
+   `.compose/templates/compose/clarity.md` and open every file the index lists: analyze
+   is the step that reads them all.
 2. Build an inventory: requirements (`FR-…`) and success criteria from the spec, user
    stories with their acceptance scenarios, the plan's decisions and structure, and every
    task with the requirement or story it serves.
@@ -31,7 +33,7 @@ $ARGUMENTS
      acceptance scenarios, tasks referring to things defined nowhere.
    - **Constitution conflicts** — anything violating a MUST principle. These are always
      critical.
-   - **Clarity conflicts** (only with `.clarity/`): the plan breaks a binding NFR,
+   - **Clarity conflicts** (only with a memory index): the plan breaks a binding NFR,
      constraint, standard or accepted ADR, or drifts from the API, data or UX conventions.
      These are critical, like constitution conflicts. Also flag a spec with no `Serves`
      goal, and failure mitigations that touch the feature but have no task.

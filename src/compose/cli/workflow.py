@@ -29,17 +29,17 @@ def _repo_root() -> Path | None:
     return git.toplevel(cwd) if git.is_work_tree(cwd) else None
 
 
-def _require_repo_root() -> Path:
-    root = _repo_root()
-    if root is None:
-        raise loader.WorkflowError("Run this inside a git repo")
-    return root
+USER_OPTION_HELP = "Use your own workflow folder ($COMPOSE_HOME/workflows), shared by all repos."
+
+
+def _scope(user: bool) -> loader.Scope:
+    return "user" if user else "repo"
 
 
 @app.command("list")
 @handle_errors
 def list_(as_json: bool = typer.Option(False, "--json", help="Print JSON.")) -> None:
-    """List built-in workflows and those installed in this repo."""
+    """List built-in workflows, your own, and those installed in this repo."""
     items = loader.list_workflows(_repo_root())
     if as_json:
         print_json(
@@ -165,15 +165,19 @@ def validate(
 def add(
     source: str = typer.Argument(..., help="Workflow folder, YAML file, or URL of a YAML file."),
     force: bool = typer.Option(False, "--force", help="Replace an installed workflow."),
+    user: bool = typer.Option(False, "--user", help=USER_OPTION_HELP),
 ) -> None:
-    """Install a workflow into this repo's .compose/workflows/."""
-    loaded = loader.add_workflow(_require_repo_root(), source, force=force)
+    """Install a workflow into this repo's .compose/workflows/ (or yours, with --user)."""
+    loaded = loader.add_workflow(_repo_root(), source, force=force, scope=_scope(user))
     console.print(f"Installed {loaded.id} at {loaded.directory}", highlight=False)
 
 
 @app.command("remove")
 @handle_errors
-def remove(workflow_id: str = typer.Argument(..., help="Installed workflow id.")) -> None:
-    """Remove a workflow installed in this repo."""
-    target = loader.remove_workflow(_require_repo_root(), workflow_id)
+def remove(
+    workflow_id: str = typer.Argument(..., help="Installed workflow id."),
+    user: bool = typer.Option(False, "--user", help=USER_OPTION_HELP),
+) -> None:
+    """Remove a workflow installed in this repo (or yours, with --user)."""
+    target = loader.remove_workflow(_repo_root(), workflow_id, scope=_scope(user))
     console.print(f"Removed {target}", highlight=False)

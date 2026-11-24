@@ -15,7 +15,9 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from compose.core import store
 from compose.core.db import Database
-from compose.core.models import Action, FileChange, HookExec, Metrics, StepExec
+from compose.core.models import HookExec, Metrics, StepExec
+from compose.runner.state import RunFiles
+from compose.tracking import journal
 from compose.tracking.diff import Change, ChangeSummary, diff_trees
 from compose.tracking.snapshot import snapshot
 
@@ -40,28 +42,15 @@ async def changes_since(rc: RunContext, before: str) -> list[Change]:
 
 
 def record_changes(
-    db: Database,
+    files: RunFiles,
     run_id: str,
     step_exec_id: str,
     hook_exec_id: str | None,
     changes: list[Change],
     target: Metrics,
 ) -> None:
-    with db.transaction():
-        for change in changes:
-            store.insert(
-                db,
-                FileChange(
-                    run_id=run_id,
-                    step_exec_id=step_exec_id,
-                    hook_exec_id=hook_exec_id,
-                    path=change.path,
-                    old_path=change.old_path,
-                    status=change.status,
-                    added=change.added,
-                    removed=change.removed,
-                ),
-            )
+    """Write the changed files to the step's changes file; the totals go on ``target``."""
+    journal.append_changes(files, run_id, step_exec_id, hook_exec_id, changes)
     summary = ChangeSummary.of(changes)
     target.files_changed = summary.files
     target.lines_added = summary.added
@@ -84,7 +73,7 @@ async def track_end(rc: RunContext, step_exec: StepExec | None, scope: Scope) ->
     if before is None:
         return
     changes = await changes_since(rc, before)
-    record_changes(rc.db, rc.run.id, step_exec.id, None, changes, step_exec)
+    record_changes(rc.files, rc.run.id, step_exec.id, None, changes, step_exec)
     rc.state.snapshots.pop(step_exec.id, None)
     rc.save_state()
     rc.emit(
@@ -112,13 +101,13 @@ async def measure_hook(
         return await work()
     finally:
         changes = await changes_since(rc, before)
-        record_changes(rc.db, rc.run.id, step_exec.id, hook_exec.id, changes, hook_exec)
+        record_changes(rc.files, rc.run.id, step_exec.id, hook_exec.id, changes, hook_exec)
 
 
 # ------------------------------------------------------------------------ records
 
 
-def _change_json(change: FileChange) -> dict[str, Any]:
+def _change_json(change: journal.FileChange) -> dict[str, Any]:
     return {
         "path": change.path,
         "old_path": change.old_path,
@@ -128,11 +117,11 @@ def _change_json(change: FileChange) -> dict[str, Any]:
     }
 
 
-def step_record(db: Database, row: StepExec) -> dict[str, Any]:
+def step_record(db: Database, files: RunFiles, row: StepExec) -> dict[str, Any]:
     """Everything recorded for one step execution: totals, hooks, files, actions."""
-    changes = store.select(db, FileChange, "step_exec_id = ?", (row.id,), "id")
     hooks = store.select(db, HookExec, "step_exec_id = ?", (row.id,), "started_at, id")
-    actions = store.select(db, Action, "step_exec_id = ?", (row.id,), "seq")
+    changes = journal.read_changes(files, row.id)
+    actions = journal.read_actions(files, [row.id, *(h.id for h in hooks)])
     by_hook: dict[str | None, list[dict[str, Any]]] = {}
     for change in changes:
         by_hook.setdefault(change.hook_exec_id, []).append(_change_json(change))

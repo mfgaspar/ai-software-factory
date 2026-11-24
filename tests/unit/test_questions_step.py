@@ -154,8 +154,7 @@ CLARITY_STEPS = """
 workflow: {id: clarity, name: Clarity, scope: repo}
 steps:
   - {id: write, prompt: write-docs}
-  - {id: constitution, prompt: constitution}
-  - {id: stamp, type: clarity, action: stamp-constitution}
+  - {id: memory, type: clarity, action: publish-memory}
   - {id: validate, prompt: validate}
   - {id: verdict, type: clarity, action: record-verdict, from_step: validate}
   - {id: commit, type: clarity, action: commit}
@@ -178,7 +177,6 @@ def test_user_workflow_with_clarity_step_is_rejected(env: Env) -> None:
 def _clarity_scripts(env: Env, last_line: str) -> None:
     env.fake.scripts = {
         "write-docs": Script(edit(".clarity/product/prd.md", "# PRD\n")),
-        "constitution": Script(edit(".compose/memory/constitution.md", "# Constitution\n")),
         "validate": Script(final_text=f"All checked.\n{last_line}"),
     }
 

@@ -7,12 +7,12 @@ from __future__ import annotations
 
 import pytest
 
-from compose.core import store
 from compose.core.config import Config, DefaultsConfig
-from compose.core.models import Action, FileChange, RunStatus
+from compose.core.models import RunStatus
 from compose.engines.claude.install import check
 from compose.engines.registry import default_registry
 from compose.runner.runner import Runner
+from compose.tracking import journal
 from tests.unit.runner_helpers import Env
 
 pytestmark = pytest.mark.live
@@ -53,8 +53,8 @@ async def test_prompt_step_on_claude_code(env: Env) -> None:
     assert step.cost_usd > 0 and step.output_tokens > 0 and (step.turns or 0) >= 1
     assert (env.worktree(run) / "hello.txt").read_text().strip() == "hi"
 
-    changes = store.select(env.db, FileChange, "step_exec_id = ?", (step.id,))
+    changes = journal.read_changes(env.files(run), step.id)
     assert [(c.path, c.added) for c in changes] == [("hello.txt", 1)]
-    actions = store.select(env.db, Action, "step_exec_id = ?", (step.id,), "seq")
+    actions = [a for a in env.actions(run) if a.step_exec_id == step.id]
     assert any(a.kind == "tool_call" and a.tool_name in ("Write", "Bash") for a in actions)
     assert any(a.kind == "tool_result" for a in actions)

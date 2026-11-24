@@ -69,12 +69,31 @@ Remove every placeholder. Add `sources:` for any supplied material you drew on.
 with the evidence; on the user's agreement set `status: n/a` and a `reason:`. Never decide N/A
 alone.
 
-## Unattended (`auto`)
+## Questions
 
-When `/clarity` passes `auto`, or no person is present, ask nothing. Draft from the sources,
-the code and the other documents. Leave each gap as a `[TBD — <what's missing or
-conflicting>]` note, and propose any N/A only as a note. Never set `status: complete` or
-`n/a`, and never write `reviewed` hashes. Return the draft and its list of gaps.
+Ask a person only what a person must answer: their intent and priorities, facts only they
+hold (real users, numbers, deadlines, owners), a trade-off the material leaves open that is
+theirs to own, a conflict the sources can't settle, and confirmations. Anything you can work
+out from the sources, the code, the other `.clarity/` documents, earlier answers or
+established practice, decide yourself: write it, mark it as inferred with where it came
+from, and name it in your summary so the person can correct it. `/clarity` sets this out in
+**Ask a person only what needs a person**.
+
+## Unattended
+
+`/clarity` runs this skill unattended in its `auto`, `draft` and `apply` phases, and passes
+`auto`. Work the same way whenever `COMPOSE_RUN_ID` is set or no person is present. Ask
+nothing. Draft from the sources, the code and the other documents, drafts included. Fill
+what you can work out yourself (see **Questions**), marked as inferred, and leave a
+`[TBD — <what's missing or conflicting>]` note only for what a person must answer, in the
+section it belongs to,
+and propose any N/A only as a note. Never set `status: complete` or `n/a`, and never write
+`reviewed` hashes. Return the draft and its list of gaps: `/clarity` turns them into
+questions for a person.
+
+Don't send the work back to `clarity-problem` or `clarity-solution` (step 3 of **Before you
+start**). Tell the story the current drafts support, and note what is still too vague to
+tell. Write no audience versions.
 
 ## Finish
 
@@ -95,5 +114,3 @@ conflicting>]` note, and propose any N/A only as a note. Never set `status: comp
 - **Writing for approval instead of truth**: if the honest version doesn't sound good, that's
   information about the project.
 - **Pleasing every audience at once**: that's what audience versions are for.
-
-Adapted from microsoft/clarity-agent (message-clarification.md), MIT License — see LICENSE.txt.

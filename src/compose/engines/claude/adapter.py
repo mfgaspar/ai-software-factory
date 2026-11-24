@@ -26,13 +26,22 @@ from claude_agent_sdk import (
 )
 from claude_agent_sdk.types import EffortLevel, PermissionMode, SettingSource
 
-from compose.engines.base import EngineEvent, EngineOptions, EngineResult, EngineRun, EngineTask
+from compose.engines.base import (
+    EngineEvent,
+    EngineOptions,
+    EngineResult,
+    EngineRun,
+    EngineTask,
+    Transcript,
+)
 from compose.engines.claude import install as installer
-from compose.engines.claude.cli import ClaudeCliRun
-from compose.engines.claude.mapping import EventMapper
+from compose.engines.claude.cli import ClaudeCliRun, task_entry
+from compose.engines.claude.mapping import EventMapper, as_stream_json
 from compose.engines.registry import EngineError
 
-DEFAULT_PERMISSION_MODE: PermissionMode = "acceptEdits"
+# Auto mode: Claude Code's classifier approves or blocks each action itself, so a
+# headless step can run the project's commands without anyone answering a prompt.
+DEFAULT_PERMISSION_MODE: PermissionMode = "auto"
 DEFAULT_SETTING_SOURCES: list[SettingSource] = ["project"]
 STOP_TIMEOUT_SECONDS = 10.0
 # compose's skills locate features through the compose CLI; headless runs can't ask
@@ -119,9 +128,12 @@ def build_options(cwd: Path, options: EngineOptions) -> ClaudeAgentOptions:
 class ClaudeRun:
     """One Claude Code session for one task."""
 
-    def __init__(self, prompt: str, options: ClaudeAgentOptions) -> None:
+    def __init__(
+        self, prompt: str, options: ClaudeAgentOptions, transcript: Transcript | None = None
+    ) -> None:
         self.prompt = prompt
         self.options = options
+        self.transcript = transcript or Transcript(None)
         self.mapper = EventMapper()
         self._client: ClaudeSDKClient | None = None
         self._result: EngineResult | None = None
@@ -142,8 +154,10 @@ class ClaudeRun:
         self._client = client
         try:
             await client.connect()
+            self.transcript.write(task_entry(self.prompt, self.options, "sdk"))
             await client.query(self.prompt)
             async for message in client.receive_response():
+                self.transcript.write(as_stream_json(message))
                 for event in self.mapper.map(message):
                     yield event
                 if isinstance(message, ResultMessage):
@@ -178,9 +192,10 @@ class ClaudeEngine:
 
     def start(self, task: EngineTask, cwd: Path, options: EngineOptions) -> EngineRun:
         sdk_options = build_options(cwd, options)
+        transcript = Transcript(options.transcript)
         if transport(options, self.default_transport) == "sdk":
-            return ClaudeRun(prompt_for(task), sdk_options)
-        return ClaudeCliRun(prompt_for(task), sdk_options)
+            return ClaudeRun(prompt_for(task), sdk_options, transcript)
+        return ClaudeCliRun(prompt_for(task), sdk_options, transcript)
 
     def install(self, path: Path, *, worktree: bool = False) -> list[Path]:
         return installer.install(path, worktree=worktree)

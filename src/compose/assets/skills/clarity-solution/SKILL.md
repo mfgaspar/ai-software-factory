@@ -60,13 +60,22 @@ Fill the template sections and remove every placeholder (`[TBD…]`, `[To be det
 other bracketed prompts) from what you fill:
 
 - `solution/solution.md`: the approach a stakeholder can follow and the key design choices in
-  it; why it fits, citing the goals (`G-###` and the problem's success criteria) it serves and
+  it; why it fits, citing the problem's success criteria (and the `G-###` goals, once the
+  product brief defines them) it serves and
   the rules (NFR-###, CON-###, STD-###) it meets, and saying how;
   the alternatives and why they lost; risks, assumptions and observations worth tracking.
 - `solution/solution-summary.md` (first version, `status: draft`): at most two pages for
   someone who read the problem and asks "so what's the plan?". What we're building; what using
   it is like, concretely enough to picture; how it addresses the problem; the non-obvious
   choices that took real discussion. `clarity-architecture` extends it later.
+
+Before you return, read it as the person who will design the architecture from it:
+
+- every success criterion and every NFR and constraint is met by name, or listed as a risk;
+- each alternative is one someone could reasonably have chosen, and the reason it lost is
+  stated against the requirements;
+- each assumption could turn out false, and says what breaks if it does;
+- nothing in the approach would be just as true of any project.
 
 A genuine fork you settle with the user deserves an ADR: use `clarity-decision`, or tell the
 user one should be recorded. If the project summary in `.clarity/summary.md` now misses the
@@ -79,12 +88,32 @@ software.
 needs its problem framed), propose N/A with the evidence; on the user's agreement set
 `status: n/a` and a `reason:`. Never decide N/A alone.
 
-## Unattended (`auto`)
+## Questions
 
-When `/clarity` passes `auto`, or no person is present, ask nothing. Draft from the sources,
-the code and the other documents. Leave each gap as a `[TBD — <what's missing or
-conflicting>]` note, and propose any N/A only as a note. Never set `status: complete` or
-`n/a`, and never write `reviewed` hashes. Return the draft and its list of gaps.
+Ask a person only what a person must answer: their intent and priorities, facts only they
+hold (real users, numbers, deadlines, owners), a trade-off the material leaves open that is
+theirs to own, a conflict the sources can't settle, and confirmations. Anything you can work
+out from the sources, the code, the other `.clarity/` documents, earlier answers or
+established practice, decide yourself: write it, mark it as inferred with where it came
+from, and name it in your summary so the person can correct it. `/clarity` sets this out in
+**Ask a person only what needs a person**.
+
+## Unattended
+
+`/clarity` runs this skill unattended in its `auto`, `draft` and `apply` phases, and passes
+`auto`. Work the same way whenever `COMPOSE_RUN_ID` is set or no person is present. Ask
+nothing. Draft from the sources, the code and the other documents, drafts included. Fill
+what you can work out yourself (see **Questions**), marked as inferred, and leave a
+`[TBD — <what's missing or conflicting>]` note only for what a person must answer, in the
+section it belongs to,
+and propose any N/A only as a note. Never set `status: complete` or `n/a`, and never write
+`reviewed` hashes. Return the draft and its list of gaps: `/clarity` turns them into
+questions for a person.
+
+Don't stop for a `Blocking: yes` question, or for goal documents that are still drafts
+(step 3 of **Before you start**). Draft on the likeliest answer, state it under the risks
+and assumptions, and say what changes if the answer is different. A fork that is the user's
+to settle becomes a `[TBD — …]` note naming the options.
 
 ## Finish
 
@@ -104,5 +133,3 @@ conflicting>]` note, and propose any N/A only as a note. Never set `status: comp
 - **Stopping at the first workable idea.**
 - **Designing something nobody can build** with the real team and timeline.
 - **Losing observations** because they "belong to another process".
-
-Adapted from microsoft/clarity-agent (solution-brainstorming.md), MIT License — see LICENSE.txt.

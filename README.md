@@ -1,13 +1,16 @@
+<p align="center"><img src="docs/assets/logo.svg" alt="CB AUTO" width="128" height="128"></p>
+
 # compose
 
-A spec-driven software factory for coding engines, starting with Claude Code. It works in two
-steps:
+A spec-driven software factory for coding engines: Claude Code and GitHub Copilot. It works in
+two steps:
 
 1. **`compose clarity`: the foundation.** compose drafts the application's why, rules and how
    (problem, non-functional requirements and standards, architecture, ADRs, product brief,
    conventions, setup) from your documents and code, then asks people only what is still
    open, in batches. Once someone confirms it and the approvers sign off, it passes
-   validation and is merged into your default branch, with a constitution generated from it.
+   validation and is merged into your default branch, published to `.compose/memory/` for
+   feature work to read.
 2. **`compose build`: delivery.** You describe a feature in a sentence; compose has the
    engine specify, plan, break down and implement it on its own branch and worktree, inside
    that foundation. A repo that started clarity only builds on a foundation that passed.
@@ -38,7 +41,9 @@ command line, from an HTTP API, or by hand inside Claude Code with the same skil
   `quick`, `full-cycle` and `bugfix` are built in, plus `clarity` and `clarity-validate`,
   and you can write your own.
 - **Traceability:** every message, tool call and result per step, with hooks nested.
-- **Cost and change tracking** per step, run, feature, repo or day, hooks included.
+- **Cost and change tracking** per step, run, feature, repo, day or user, hooks included.
+- **OpenTelemetry export** (optional, off by default): one trace per run with a span per step,
+  plus cost and token metrics, over OTLP. See [OpenTelemetry](docs/cli.md#opentelemetry).
 - **One worktree and branch per feature**; runs on different features run in parallel.
 - **One store, many repos**: register local clones or clone from a git URL.
 
@@ -49,6 +54,24 @@ You need Python 3.11+, [uv](https://docs.astral.sh/uv/), git, and Claude Code si
 (`claude -p --output-format stream-json`), or the copy bundled with the Claude Agent SDK
 when there is none. To drive Claude Code through the SDK instead, set
 `engines.claude.transport: sdk` in `~/.compose/config.yml`.
+
+To run on GitHub Copilot instead, install the Copilot CLI (`copilot` on your PATH), sign in
+(`copilot login`, or set `COPILOT_GITHUB_TOKEN`) and set the default engine:
+
+```yaml
+# ~/.compose/config.yml
+defaults:
+  engine: copilot
+```
+
+The same skills and workflows run on either engine. **Switching engines**: the most specific
+setting wins, in this order: `engine:` on a step, `engine:` on the workflow, then
+`defaults.engine` in the config (`claude` when none is set). `compose init` and
+`compose check` also take `--engine`; `compose build` and `compose run` don't, so to switch
+one build, change the config or the workflow. The foreground CLI prints
+`⚙ Engine: <engine> (<model>)` when a step first uses an engine and whenever it changes.
+See [Engines and models](docs/workflow-reference.md#engines-and-models)
+for what differs.
 
 From a checkout, the install scripts set everything up: they check git, install
 [uv](https://docs.astral.sh/uv/) if it is missing (asking first; `--yes`/`-Yes` skips
@@ -83,7 +106,7 @@ compose check
 In the repository you want to work on:
 
 ```bash
-compose init --engine claude
+compose init
 ```
 
 This installs the skills into `.claude/skills/`, the templates into
@@ -109,7 +132,7 @@ compose clarity status                      # documents, verdict, whether a buil
 ```
 
 `--mode auto` only drafts and asks nothing (its questions wait for later). compose commits
-the clarity documents and the generated constitution on the `clarity` branch as it goes, and
+the clarity documents and the published memory files on the `clarity` branch as it goes, and
 when validation passes (`CLARITY: PASS`) it fast-forwards your local default branch to it. It
 never pushes.
 
@@ -135,11 +158,31 @@ compose run quick -i spec="Add a CSV export to the reports page" \
 ```
 
 compose creates feature `001-add-csv-export` with its own branch and worktree under
-`~/.compose/worktrees/`, then runs each step there, printing a line per step. Nothing is
-committed or pushed for you; review and merge the feature branch as usual.
+`~/.compose/worktrees/`, then runs each step there, printing a line per step. When the run
+stops (completed, paused, failed or aborted) compose commits the worktree on the feature
+branch. When it completes, compose also fast-forwards your default branch to it, so the
+work is in your repo's folder:
 
-`allowed_tools` names the commands implement may run without asking (here, the tests).
-Without it, implement can edit files but not run your project's commands.
+```text
+The work is merged into main, in . (branch 001-add-csv-export).
+```
+
+When it can't fast-forward (the default branch changed meanwhile, or your checkout has
+files in the way), or with `features: {merge: false}` in the config, it prints where the
+work is, with the commands to review and merge it:
+
+```text
+The work is on branch 001-add-csv-export (1 commit ahead of main).
+  Files:   ~/.compose/worktrees/my-app/001-add-csv-export
+  Review:  git -C . diff main...001-add-csv-export
+  Merge:   git -C . merge 001-add-csv-export
+```
+
+compose never pushes.
+
+compose runs Claude Code in auto mode, so implement can run your project's commands
+(tests, builds) without asking, and Claude Code blocks risky actions itself.
+`allowed_tools` always allows the commands it names (here, the tests), whatever the mode.
 
 Follow and inspect runs:
 
@@ -147,6 +190,7 @@ Follow and inspect runs:
 compose status                       # recent runs
 compose status <run>                 # each step: status, time, cost, tokens, files, lines
 compose trace <run> --step implement # what the engine did
+compose trace <run> --full           # all of it: prompts, thinking, whole tool calls and results
 compose changes <run>                # files and lines per step
 compose cost --by feature            # where the money went
 ```
@@ -220,8 +264,10 @@ other's. Live progress streams as Server-Sent Events from `/runs/{id}/events?str
 
 | what | where |
 |---|---|
-| database (runs, steps, hooks, actions, costs, file changes) | `~/.compose/compose.db` |
+| database: which runs, steps and hooks exist, their status, timing, tokens, cost and change totals (no logs) | `~/.compose/compose.db` |
 | per run: definition, inputs, state, event log, step records | `~/.compose/runs/<run>/` |
+| everything Claude did in a step: prompt, thinking, messages, every tool call and result | `~/.compose/runs/<run>/steps/<exec id>.transcript.jsonl` (`compose trace <run> --full`) |
+| what each step did (`steps/<exec id>.actions.jsonl`) and which files it changed (`steps/<exec id>.changes.jsonl`) | `~/.compose/runs/<run>/steps/` (`compose trace`, `compose changes`) |
 | feature worktrees | `~/.compose/worktrees/<repo>/<feature>/` |
 | the clarity worktree (branch `clarity`) | `~/.compose/worktrees/<repo>/clarity/` |
 | repos cloned from URLs | `~/.compose/repos/` |
@@ -229,6 +275,13 @@ other's. Live progress streams as Server-Sent Events from `/runs/{id}/events?str
 
 Set `COMPOSE_HOME` to use another folder. compose never deletes worktrees; run history
 stays queryable after you remove one.
+
+The database holds only what you need to find and compare runs: ids, status, timing,
+tokens, cost and change totals. Everything detailed (actions, changed files, transcripts,
+events) is in the run folder, so a run is traced from its id: `~/.compose/runs/<run id>/`.
+Detail files are read and written through one storage interface, so they can move to blob
+storage later. The database is SQLite by default; `COMPOSE_DATABASE_URL=<scheme>://…`
+selects another registered backend (only `sqlite` ships today).
 
 ## Development
 

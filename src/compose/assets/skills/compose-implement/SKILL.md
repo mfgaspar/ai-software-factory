@@ -17,7 +17,10 @@ $ARGUMENTS
 1. Run `compose feature paths --json`. Read `tasks_file` and `plan_file` (both required —
    name the missing skill and stop if not). Read `data-model.md`, `contracts/`,
    `research_file` and `quickstart.md` in the feature folder when they exist, and the
-   constitution at `constitution_file`.
+   constitution at `constitution_file`. When the constitution is a memory index (its first
+   line is `<!-- memory-index: … -->`), also read the guide at
+   `.compose/templates/compose/clarity.md` and open the files the index lists for the
+   `implement` step, and those whose "when" fits what you are building.
 2. **Checklists.** If `checklists_dir` has checklists, count unchecked items per file. If
    any are incomplete: in an interactive session, show the table and ask whether to
    continue; in a headless run (e.g. `COMPOSE_RUN_ID` is set), continue and mention it in
@@ -27,7 +30,8 @@ $ARGUMENTS
 4. Work through the tasks in phase order, within the requested scope:
    - respect dependencies; tasks marked `[P]` may be done in any order;
    - when tests are part of the tasks, write them first and see them fail;
-   - follow the plan's structure and decisions, and the constitution;
+   - follow the plan's structure and decisions, and the constitution (with a memory
+     index: the binding rules in the files you opened);
    - after finishing each task, mark it `- [x]` in `tasks_file` immediately.
 5. After each phase, run the project's tests and checks if it has them, and fix failures
    before moving on. If a task cannot be done, stop that line of work, leave it unchecked,

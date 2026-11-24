@@ -1,18 +1,13 @@
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 
 from compose.core import store
-from compose.core.db import Database
+from compose.core.db import Database, IntegrityError
 from compose.core.ids import new_id
 from compose.core.models import (
-    Action,
     ExecStatus,
     Feature,
-    FileChange,
-    FileStatus,
     HookExec,
     HookKind,
     Repo,
@@ -103,37 +98,6 @@ def test_hook_exec_round_trip(db: Database, graph: dict[str, str]) -> None:
     assert store.get(db, HookExec, hook.id) == hook
 
 
-def test_autoincrement_records(db: Database, graph: dict[str, str]) -> None:
-    action = store.insert(
-        db,
-        Action(
-            run_id=graph["run"],
-            step_exec_id=graph["step"],
-            seq=1,
-            kind="tool_call",
-            tool_name="Edit",
-            input_summary="src/app.py",
-        ),
-    )
-    assert isinstance(action.id, int)
-    assert store.get(db, Action, action.id) == action
-
-    change = store.insert(
-        db,
-        FileChange(
-            run_id=graph["run"],
-            step_exec_id=graph["step"],
-            path="logo.png",
-            status=FileStatus.ADDED,
-            added=None,
-            removed=None,
-        ),
-    )
-    loaded = store.get(db, FileChange, change.id)
-    assert loaded == change
-    assert loaded is not None and loaded.added is None
-
-
 def test_select(db: Database, graph: dict[str, str]) -> None:
     for i in range(3):
         store.insert(
@@ -158,12 +122,12 @@ def test_update_missing_raises(db: Database) -> None:
 
 
 def test_status_check_constraint(db: Database, graph: dict[str, str]) -> None:
-    with pytest.raises(sqlite3.IntegrityError):
-        db.conn.execute("UPDATE runs SET status = 'bogus' WHERE id = ?", (graph["run"],))
+    with pytest.raises(IntegrityError):
+        db.execute("UPDATE runs SET status = 'bogus' WHERE id = ?", (graph["run"],))
 
 
 def test_foreign_keys_enforced(db: Database) -> None:
-    with pytest.raises(sqlite3.IntegrityError):
+    with pytest.raises(IntegrityError):
         store.insert(db, Run(id="run_x", repo_id="missing", workflow_id="w", workflow_version="1"))
 
 

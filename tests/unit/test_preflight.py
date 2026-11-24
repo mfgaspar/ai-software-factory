@@ -59,8 +59,8 @@ def _refused(env: Env) -> preflight.PreflightError:
     with pytest.raises(preflight.PreflightError) as info:
         env.runner().create_run(env.repo, env.workflow(FEATURE_WF), {"spec": "a thing"})
     assert isinstance(info.value, RunError)
-    assert env.db.conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
-    assert env.db.conn.execute("SELECT COUNT(*) FROM features").fetchone()[0] == 0
+    assert env.db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+    assert env.db.execute("SELECT COUNT(*) FROM features").fetchone()[0] == 0
     return info.value
 
 
@@ -189,7 +189,7 @@ def test_compose_run_refuses_with_the_fix(
     home = ensure_home()
     db = open_database(home)
     try:
-        assert db.conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM runs").fetchone()[0] == 0
     finally:
         db.close()
     assert engine.calls == []
@@ -206,3 +206,15 @@ def test_compose_run_warns_when_not_started(
     result = cli("run", str(git_repo / "wf.yml"), "-i", "spec=a thing", "--no-interactive")
     assert result.exit_code == 0, result.output
     assert "warning: No clarity foundation" in result.output
+
+
+def test_legacy_constitution_refuses_until_memory_is_published(env: Env) -> None:
+    """A model-written constitution with the right fingerprint has no memory files."""
+    root = env.repo_path
+    _foundation(root)
+    fp = fingerprint.of_ref(root, "HEAD")
+    legacy = f"<!-- generated-from-clarity: {fp} -->\n# Constitution\n"
+    _commit(root, {constitution.CONSTITUTION_FILE: legacy})
+    error = _refused(env)
+    assert [p.message for p in error.problems] == ["The constitution is out of date with clarity."]
+    assert _fixes(error) == ["compose clarity validate"]

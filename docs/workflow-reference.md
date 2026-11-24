@@ -20,8 +20,12 @@ repo. This page is the authoritative description of the format and its behavior.
 | Source | Location | Notes |
 |---|---|---|
 | built-in | shipped with compose | `automated` (the default), `full-cycle`, `quick`, `bugfix` |
-| repo | `.compose/workflows/<id>/workflow.yml` | installed with `compose workflow add`; shadows a built-in with the same id |
+| repo | `.compose/workflows/<id>/workflow.yml` | installed with `compose workflow add`; shadows a user or built-in workflow with the same id |
+| user | `$COMPOSE_HOME/workflows/<id>/workflow.yml` (default `~/.compose/workflows/`) | installed with `compose workflow add --user`; available in every repo; shadows a built-in with the same id |
 | file | any path passed to `compose run` | e.g. `compose run ./my-flow.yml` |
+
+An id is looked up in the repo, then your user folder, then the built-ins. Workflows
+outside the built-ins cannot use `type: clarity` steps.
 
 A workflow folder can contain companion files (scripts, prompts, README). Its path is
 available to steps as `context.workflow_dir`. A run keeps a copy of the definition it
@@ -32,7 +36,8 @@ compose workflow list
 compose workflow info full-cycle
 compose workflow validate ./my-flow.yml
 compose workflow add ./my-flow/          # or a file, or an https:// URL of a YAML file
-compose workflow remove my-flow
+compose workflow add --user ./my-flow/   # into ~/.compose/workflows/, for every repo
+compose workflow remove my-flow          # --user to remove your own copy
 ```
 
 ## File layout
@@ -45,7 +50,7 @@ workflow:
   version: 1.2.0               # X.Y.Z, default 0.0.0
   author: platform-team
   description: Specify, plan, implement and run the tests.
-  engine: claude               # default engine for engine steps and hooks
+  engine: claude               # default engine for engine steps and hooks (claude or copilot)
   model: claude-sonnet-5-5     # default model
   reasoning_effort: medium
   limits:
@@ -130,7 +135,9 @@ Every step has:
 |---|---|---|
 | `id` | required | unique within the workflow (nested steps included); letters, digits, `_`, `-`; `run` and `step` are reserved |
 | `type` | inferred | see below |
-| `name`, `description` | none | documentation |
+| `name` | none | the label a foreground run shows for the step (default: its `id`) |
+| `description` | none | documentation |
+| `quiet` | `false` | leave the step out of a foreground run's progress unless it fails (`-v` shows it) |
 | `continue_on_error` | `false` | if the step fails, record it and carry on |
 | `timeout` | none | seconds; exceeding it fails the step |
 
@@ -334,7 +341,7 @@ The child runs in the same feature and worktree as a linked child run. Its decla
 `outputs` become this step's output. Calls nest up to 16 deep; a workflow cannot call
 itself directly or through others.
 
-`type: clarity` steps (recording the verdict, stamping the constitution, committing on the
+`type: clarity` steps (recording the verdict, publishing the memory files, committing on the
 clarity branch and merging) are compose's own bookkeeping, internal to the built-in clarity
 workflows. A workflow outside compose that uses one is rejected.
 
@@ -372,6 +379,7 @@ Every step also exposes its tracking values (see [Tracking](#tracking)):
 | `context.repo.id`, `context.repo.name`, `context.repo.dir` | the repo; `dir` is the run's working directory |
 | `context.feature.id`, `.name`, `.branch`, `.dir` | the feature; `dir` is `specs/<name>` relative to the worktree root. Null in a repo-scoped run |
 | `context.constitution_exists` | whether `.compose/memory/constitution.md` exists |
+| `context.engine` | the workflow's engine (`claude` or `copilot`): its `engine`, else the configured default |
 
 Shell steps, hooks and engine steps also get these environment variables:
 
@@ -466,8 +474,9 @@ A step's changes cover everything from just before its first hook to just after 
 last: the step itself, its hooks, and any edits made by hand while a gate was waiting.
 Each hook is also measured on its own, so a step record shows which hook changed what.
 Fan-out items keep their own cost and actions, but their file changes are recorded on
-the fan-out. A loop or `if` shows the sum of the steps inside it. Run and feature totals
-count a file once even when several steps changed it.
+the fan-out. A loop or `if` shows the sum of the steps inside it. Run and feature totals add up each
+step's own totals, so a file changed by several steps counts once per step; the paths are
+in the run's `steps/<exec id>.changes.jsonl` files.
 
 ## Limits
 
@@ -487,7 +496,10 @@ When a limit is reached compose stops the engine and the step fails with reason
 
 `engine`, `model`, `reasoning_effort` and `engine_options` can be set on the workflow, on
 an engine step, or on a hook. The most specific setting wins; unset values come from the
-workflow, then from `defaults` in `~/.compose/config.yml`. `engine_options` are passed to
+workflow, then from `defaults` in `~/.compose/config.yml`. To switch between `claude` and
+`copilot`, set `engine` at one of those levels (a workflow can use both: name the engine on
+the steps that differ); the CLI prints `⚙ Engine: <engine> (<model>)` when a step first uses
+one and whenever it changes. `engine_options` are passed to
 the engine adapter. Their values may contain expressions; in a list, an item that is one
 expression giving a list is spliced in, so tools can come from an input:
 
@@ -504,7 +516,7 @@ For Claude Code (`engine: claude`):
 | `engine_options` key | Default | Meaning |
 |---|---|---|
 | `transport` | `cli` | `cli` runs `claude -p --output-format stream-json --verbose` with the prompt on stdin and reads its JSON lines; `sdk` drives Claude Code through the Claude Agent SDK. Both record the same trace, tokens and cost |
-| `permission_mode` | `acceptEdits` | `default`, `acceptEdits`, `plan`, `bypassPermissions`, `dontAsk` or `auto` |
+| `permission_mode` | `auto` | `auto` lets Claude Code decide each permission itself: it runs ordinary commands and edits without asking and blocks risky actions. Also `default`, `acceptEdits` (edits only; commands need `allowed_tools`), `plan`, `bypassPermissions` or `dontAsk` |
 | `allowed_tools` | `compose` CLI only | tools allowed without asking, e.g. `["Bash(npm test)"]`; added to `Bash(compose:*)`, which compose's skills need. Spaces around entries and empty entries are dropped |
 | `disallowed_tools` | none | tools never allowed |
 | `setting_sources` | `[project]` | which Claude Code settings to load: `user`, `project`, `local` |
@@ -519,11 +531,41 @@ engines:
   claude:
     transport: sdk
     cli_path: /opt/claude/bin/claude
+    permission_mode: acceptEdits   # if your Claude Code account can't use auto mode
 ```
 
 With the `cli` transport, the final `result` line gives the step's cost, tokens, turns and
 errors; if the process is stopped before it prints one (abort, timeout), the tokens seen so
 far are kept and the cost is unknown. The `sdk` transport behaves the same way.
+
+For GitHub Copilot (`engine: copilot`), compose runs `copilot --output-format=json` with
+the prompt on stdin, in the same worktree and with the same skills (installed in
+`.github/skills/` for Copilot, `.claude/skills/` for Claude Code):
+
+| `engine_options` key | Default | Meaning |
+|---|---|---|
+| `permission_mode` | `allow-all` | `allow-all` approves every tool and every path, so an unattended run is never blocked. `assisted` has Copilot's approval judge review each action; it can refuse ordinary edits or copies, and a refusal is final since nobody can answer. `rules` allows only `allowed_tools`; anything else is refused, since nobody can answer |
+| `allowed_tools` | `compose` CLI only | tools allowed without asking, in Copilot's form (`shell(npm test)`, `shell(npm:*)`, `write`) or Claude Code's (`Bash(npm test)`, `Edit`, `Read`), which is translated; added to `shell(compose:*)` |
+| `disallowed_tools` | none | tools never allowed, in either form; these win over every allow |
+| `allowed_urls` | none | URLs or domains Copilot may fetch without asking |
+| `add_dirs` | none | extra directories Copilot may access |
+| `cli_path` | `copilot` on PATH | a specific `copilot` executable |
+
+What differs from Claude Code:
+
+- **Cost.** Copilot bills in AI credits, at one US cent each. compose records a step's
+  credits as dollars, and passes `max_cost_usd` as the session's credit cap (Copilot accepts
+  no cap under 30 credits, $0.30). Copilot reports tokens and credits when a step ends, so
+  the live line shows no cost while it runs. On the older premium-request plans Copilot
+  reports no credits and the cost stays 0.
+- **Turns.** Copilot has no turn limit of its own; compose counts turns and stops the step
+  when `max_turns` is passed.
+- **Models and effort.** `model` is a Copilot model name (`copilot --model`), and
+  `reasoning_effort` is one of `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`.
+- **Sign-in.** `compose check` confirms the CLI runs but cannot tell whether it is signed in;
+  a signed-out step fails with Copilot's message.
+- **Skills.** Copilot does not fill in a skill's `$ARGUMENTS`, so compose sends the skill's
+  text with the arguments in place.
 
 `reasoning_effort` is one of `low`, `medium`, `high`, `xhigh`, `max`. A step's
 `max_cost_usd`, or what is left of the run's, is passed to Claude Code as its budget, so
@@ -585,11 +627,11 @@ Run states: `created → running → completed | paused | failed | aborted`.
 
 | id | steps | inputs |
 |---|---|---|
-| `automated` (default) | constitution (if missing or `with_constitution`) → specify → clarify + clarify review gate (unless `skip_clarify`) → plan → find skills + install gate (if `with_skills`) → checklist (if `with_checklist`) → tasks → analyze → implement → converge | `spec`, `feature_name`, `with_constitution`, `with_skills`, `review_skills_verdict`, `with_checklist`, `checklist_topic`, `skip_clarify`, `review_clarify_verdict`, `reasoning`, `plan`, `code`, `allowed_tools` |
+| `automated` (default) | constitution (if missing or `with_constitution`) → specify → clarify + clarify review gate (unless `skip_clarify`) → plan → find skills + install gate when any are suggested (unless `with_skills=false`) → checklist (if `with_checklist`) → tasks → analyze → implement → converge | `spec`, `feature_name`, `with_constitution`, `with_skills`, `review_skills_verdict`, `with_checklist`, `checklist_topic`, `skip_clarify`, `review_clarify_verdict`, `reasoning`, `plan`, `code`, `allowed_tools` |
 | `quick` | specify → plan → tasks → implement → converge, no gates | `spec`, `feature_name`, `converge`, `allowed_tools` |
 | `full-cycle` | constitution (if missing) → specify → clarify (if `clarify`) → spec review gate → plan → plan review gate → tasks → analyze → implement → converge | `spec`, `feature_name`, `clarify`, `review_spec_verdict`, `review_plan_verdict`, `converge`, `allowed_tools` |
-| `clarity` (repo-scoped) | draft → (questions → apply), while non-approval questions are pending, at most 4 rounds, mixed only → constitution from clarity → validate → record verdict, commit, merge on PASS | `sources`, `mode` (`mixed` or `auto`) |
-| `clarity-validate` (repo-scoped) | validate → record verdict → constitution (on PASS, if out of date) → commit, merge on PASS | none |
+| `clarity` (repo-scoped) | draft → (questions → apply), while non-approval questions are pending, at most 4 rounds, mixed only → publish memory → validate → record verdict, commit, merge on PASS | `sources`, `mode` (`mixed` or `auto`) |
+| `clarity-validate` (repo-scoped) | validate → record verdict → publish memory (on PASS) → commit, merge on PASS | none |
 | `bugfix` | bug assess → assessment review gate → (bug fix → test) until the tests pass, at most 3 times and only while the fix changes files → bug test (verify) | `report`, `test_command`, `feature_name`, `review_assessment_verdict`, `allowed_tools` |
 
 Start the clarity workflows with `compose clarity` and `compose clarity validate` (see
@@ -606,12 +648,26 @@ model for the thinking steps, plan and implement; left empty they use the config
 default model. `model` and `reasoning_effort` on any step or hook may use `{{ }}`
 expressions; one that renders empty falls back to the workflow's, then the config's.
 
-With `-i with_skills=true`, `automated` runs `/compose-find-skills` right after plan, when
+By default, `automated` runs `/compose-find-skills` right after plan, when
 the stack is known and before tasks and implement, which can then use what gets
 installed. It writes its suggestions to `specs/<feature>/skills.md` and installs nothing
-itself. The run then stops at `skills-gate`: `install` runs
-`npx skills add <owner/repo@skill> -a claude-code -y` for each line under `## Install`
-(only well-formed names are passed on), into the feature worktree; `reject` skips it.
+itself. It is told to suggest skills about the stack only: the project is spec-driven, so a
+skill that sets how the work is done (test-driven or behaviour-driven development, planning,
+review workflows) is left out, and one named for TDD or BDD is never listed or installed
+even if suggested. When it suggests at least one skill, the run stops at `skills-gate`, and the
+question lists each skill it would install with what it is for:
+
+```text
+? Install these skills into this feature's worktree?
+  - vercel-labs/agent-skills@web-design-guidelines: UI review rules
+  - anthropics/skills@webapp-testing: browser tests with Playwright
+What each one does: specs/004-dashboard/skills.md
+```
+
+`install` runs `npx skills add <owner/repo@skill> -a claude-code -y` for each listed
+skill, into the feature worktree; `reject` skips it. The list comes from the lines under
+`## Install` in `skills.md`, and only well-formed names are listed or passed on. When
+nothing is suggested there is no question and the run carries on.
 Installed files show in that step's changes; committing them is up to you. Needs
 Node.js and network access; a failed install is recorded and the run carries on.
 
@@ -643,7 +699,7 @@ compose resume <run> [--choice option] [-i name=value ...] [--detach]
 compose abort <run>
 compose trace <run> [--step id] [--full]
 compose changes <run> [--step id]
-compose cost [--run r | --feature f | --repo r | --all] [--by step|run|feature|repo|day]
+compose cost [--run r | --feature f | --repo r | --all] [--by step|run|feature|repo|day|user]
              [--since 2026-11-01] [--until 2026-12-01]
 ```
 

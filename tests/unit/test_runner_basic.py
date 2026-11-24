@@ -84,8 +84,10 @@ async def test_linear_run(env: Env) -> None:
     assert "engine_event" in types
     assert (files.steps_dir / f"{specify.id}.json").exists()
     assert [e["type"] for e in env.events][0] == "run_started"
-    # The user's checkout is untouched; work happened in the feature worktree.
-    assert not (env.repo_path / "specs").exists()
+    # Work happened in the feature worktree; on completion the default branch was
+    # fast-forwarded, so it shows in the user's checkout.
+    assert (env.repo_path / "specs").exists()
+    assert "feature_merged" in types
 
 
 async def test_failure_stops_run(env: Env) -> None:

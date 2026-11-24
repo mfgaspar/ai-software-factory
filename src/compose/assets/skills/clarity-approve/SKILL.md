@@ -36,14 +36,17 @@ as the approver gives it. They only exist for documents listed under `approvals`
      confirmed, so it must be re-confirmed first (run `/clarity`).
    - **stale**: a dependency's current hash differs from `reviewed.deps`. Re-confirm first, so
      the approver signs content that reflects the current upstream.
-   - ADRs whose `status` is `proposed` or `reconsider`. Settle the decision first.
+   - ADRs whose `status` is `proposed` or `reconsider`. Settle the decision first. An ADR
+     is finished when it is `accepted`; a `superseded` one needs no approval.
 4. **Ask who is approving.** For each document, show its title, one line on what it says, and
-   the approvers still missing. Ask the person in this conversation for their name. Accept it
-   only if it is on that document's list (ignore case and surrounding spaces).
+   the approvers still missing. Ask the person in this conversation for their name, once.
+   Accept it for a document only if it is on that document's list (ignore case and
+   surrounding spaces).
 5. **Get an explicit approval.** The person must say they approve, for example "I approve
    product/prd.md". "Looks fine" or silence doesn't count. They may approve several documents
    in one sentence if they name them.
-6. **Record it.** Append one entry to the document's `approvals` front matter list, with:
+6. **Record it.** Append one entry to the document's `approvals` front matter list (for
+   `decisions/*`, each ADR's own list), with:
    - `by`: the name as listed in the config;
    - `at`: today's date, ISO;
    - `hash`: the current body hash.

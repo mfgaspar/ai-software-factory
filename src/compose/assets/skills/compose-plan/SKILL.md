@@ -17,9 +17,10 @@ $ARGUMENTS
 1. Run `compose feature paths --json`. Read `spec_file` (required — if it is missing, stop
    and tell the user to run `/compose-specify`), the constitution at `constitution_file`
    if it exists, and the plan template `plan.md` in `templates_dir`.
-   When the JSON's `clarity` is not null, also read the guide at `clarity.guide` (`.compose/templates/compose/clarity.md`) and
-   the documents it lists for planning. These are the application's architecture, stack,
-   accepted ADRs and conventions.
+   When the constitution is a memory index (its first line is `<!-- memory-index: … -->`),
+   also read the guide at `.compose/templates/compose/clarity.md` and open the files the
+   index lists for the `plan` step, and those whose "when" fits this feature. These are the
+   application's architecture, stack, accepted ADRs and conventions.
 2. If the spec still has `[NEEDS CLARIFICATION]` markers on things that change the design,
    say so; in an interactive session suggest `/compose-clarify` first, otherwise proceed and
    state your assumptions.
@@ -27,11 +28,13 @@ $ARGUMENTS
    - **Technical context**: language, dependencies, storage, testing, platform, project
      type, performance goals, constraints, scale. Follow the user's direction and the
      repository's existing choices; mark real unknowns `NEEDS CLARIFICATION`.
-   - **Constitution check**: one row per principle with how the plan complies. A
+   - **Constitution check**: one row per principle with how the plan complies (with a
+     memory index, the Clarity check below takes its place). A
      violation must be justified in "Complexity tracking", or the plan changed to remove
      it. Do not continue past an unjustified violation.
-   - **Clarity check** (only with `.clarity/`): one row per applicable NFR, constraint,
-     standard, accepted ADR and convention document. Technical context comes from the
+   - **Clarity check** (only with a memory index): one row per applicable NFR, constraint,
+     standard, accepted ADR and convention file, from the binding files you opened. A
+     violation is treated like a constitution violation. Technical context comes from the
      architecture and accepted ADRs. Don't pick a different stack. A conflict is handled
      as the guide says.
 4. **Phase 0 — research.** For every unknown and every key technology choice, decide and
@@ -44,10 +47,11 @@ $ARGUMENTS
    - `data-model.md`: entities, fields, relationships, validation rules, state changes;
    - `contracts/`: the interfaces the feature exposes (API endpoints, CLI commands, events,
      public functions), one file per interface, in the format that fits the project;
-   - with `.clarity/`: the data model extends `.clarity/data/data-model.md`'s core entities
-     and follows its data rules. Contracts follow `.clarity/contracts/api.md`'s conventions
-     and extend its published `spec`, if any, without breaking it. Screens and flows follow
-     `.clarity/product/ux-standards.md`;
+   - with a memory index: the data model extends the core entities in the memory file
+     `data/data-model.md` and follows its data rules. Contracts follow the conventions in
+     `contracts/api.md` and extend the published spec its index row names, if any, without
+     breaking it. Screens and flows follow `product/ux-standards.md`. Skip a file the
+     index lists as not applicable;
    - `quickstart.md`: how to run and check the feature end to end.
    Skip a file only when it clearly doesn't apply, and say why in the plan.
 6. Fill in the project structure with the real directories, and re-run the constitution

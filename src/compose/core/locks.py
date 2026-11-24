@@ -66,7 +66,7 @@ def is_stale(info: LockInfo, *, stale_after: float = DEFAULT_STALE_AFTER) -> boo
 
 
 def read_lock(db: Database, key: str) -> LockInfo | None:
-    row = db.conn.execute("SELECT * FROM locks WHERE key = ?", (key,)).fetchone()
+    row = db.execute("SELECT * FROM locks WHERE key = ?", (key,)).fetchone()
     return None if row is None else LockInfo(**dict(row))
 
 
@@ -84,11 +84,10 @@ class Lock:
         return self.info.key
 
     def heartbeat(self) -> None:
-        with self.db.transaction() as conn:
-            cur = conn.execute(
-                "UPDATE locks SET heartbeat_at = ? WHERE key = ? AND owner = ?",
-                (time.time(), self.key, self.info.owner),
-            )
+        cur = self.db.execute(
+            "UPDATE locks SET heartbeat_at = ? WHERE key = ? AND owner = ?",
+            (time.time(), self.key, self.info.owner),
+        )
         if cur.rowcount != 1:
             raise LockLost(f"lost lock {self.key}")
 

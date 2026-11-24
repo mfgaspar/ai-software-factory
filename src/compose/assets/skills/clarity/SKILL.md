@@ -50,6 +50,7 @@ skills can still be run on their own to rework one document.
 `COMPOSE_RUN_ID` is set, never ask anything, whatever the mode word: with no phase word, run
 `draft`. Each mode is described under **Modes and phases in detail**, after the flow.
 
+## Where things are
 
 - The shipped manifest, `.compose/templates/clarity/manifest.yml`, is the source of truth. It
   lists every document with its `template`, `depends_on`, `required_sections` and `produced_by`
@@ -113,15 +114,19 @@ feedback or decisions made elsewhere. New information outranks the files.
 
 ### 2. Configure
 
-Invoke `clarity-configure`, passing the inputs summary and any short-cuts from the arguments
-(and `draft` in the unattended phases, where it works in proposal form). It agrees on the mandatory set, N/A, custom documents and approvers
-with the user, then writes `.clarity/config.yml`. On a re-run, it only asks whether to keep
-the setup.
+Invoke `clarity-configure`, passing the inputs summary and any short-cuts from the arguments.
+It agrees on the mandatory set, N/A, custom documents and approvers with the user, then
+writes `.clarity/config.yml`. On a re-run, it only asks whether to keep the setup. In the
+unattended phases, pass `draft` as well: it then works in proposal form.
 
 ### 3. Scaffold
 
 Create `.clarity/` and every document in the effective manifest (companions included) by
-copying its template. **Skip any file that already exists.** The exceptions:
+copying its template. **Skip any file that already exists.** A document the config removes
+from the mandatory set is not in the effective manifest: don't create it, and don't draft
+it later. The same holds for an optional shipped document (`mandatory: false` in the
+manifest, such as `failures/fmea.md`) unless the config names it under `mandatory.add`. An untouched template left in `.clarity/` reads as a draft to everything that
+follows. The exceptions:
 
 - A document that the config marks N/A is still created from its template, with `status: n/a`
   and `reason:` taken from the config.
@@ -178,7 +183,8 @@ Custom documents join the stage of the document they `walk_after`. For each stag
      `clarity-decision`.
    - **Custom documents with `produced_by: clarity`.** Draft these yourself, from their
      template, sources and dependencies, the same way.
-2. **Confirm the stage in one batch.** Write a short summary for each document: what was
+2. **Confirm the stage in one batch.** First hold the stage's documents to **The quality
+   bar** and fix what fails. Then write a short summary for each document: what was
    drafted or inferred, and from where. List the gaps still open and any N/A candidates with
    their evidence. Ask what's wrong or missing. Apply corrections, and resolve gaps with the
    user until none are left, or until the user explicitly leaves a gap open.
@@ -189,6 +195,8 @@ Custom documents join the stage of the document they `walk_after`. For each stag
    - write `reviewed.hash` (the document's body hash);
    - write `reviewed.deps` (the body hash of each `depends_on` document).
 
+   Finish every body edit in the batch before you compute any hash. A body edited after
+   its hash was written shows as edited, and every document that depends on it as stale.
    Documents the user wants to keep working on stay `draft`.
 4. **Save progress.** End the stage with one line: `Done: <stage>. Next: <stage>.`. Add the
    same line under `## Progress` in `notes.md`.
@@ -225,8 +233,9 @@ name. Approvers who aren't present stay pending, and the report names them. In `
 Invoke `clarity-validate`, and show its table and its last line (`CLARITY: PASS` or
 `CLARITY: FAIL (<n> incomplete)`). After it, add one plain sentence: what's done, and who needs
 to do what next, for example "Ana needs to approve the PRD: she can run `/clarity-approve
-product/prd.md`". When the project uses compose, also suggest `/compose-constitution from-clarity` to
-regenerate the constitution from these documents. (A `compose clarity` run does both for you.)
+product/prd.md`". When the project uses compose, also say that `compose clarity validate`
+publishes these documents to `.compose/memory/`, where feature work reads them. (A `compose
+clarity` run does both for you.)
 
 ## Resuming, re-runs and loops
 
@@ -260,6 +269,8 @@ these fields:
   (for example `also require solution/architecture.md`), and `recommended`: your pick among
   them, or null. `confirm` alone is not a choice: add the likeliest alternatives whenever
   there are any. The person can always answer in their own words when `free_text` is true.
+  Never write "(recommended)" into an option or into `recommended`: `recommended` already
+  names the option, and compose marks it.
 - `free_text`: `true` for setup, gap, conflict and review questions. Approval questions have
   options `[approve, reject]` and `free_text: false`.
 - `approver`: approval questions only, the name exactly as `.clarity/config.yml` lists it;
@@ -287,25 +298,49 @@ Unattended: never ask anything. Run steps 0–5 in drafting-only form:
 
 1. **Steps 0–1** as written, without the opening sentences or the "anything changed?" question.
 2. **Step 2, configure in proposal form.** Invoke `clarity-configure` with `draft`. It writes
-   the proposed `.clarity/config.yml` and returns a short summary: the proposed mandatory set,
-   the N/A candidates with their evidence, the approvers named so far, and any custom
-   documents. Raise **one** `setup` question asking to confirm or correct it, and who
-   approves what. Put the summary in `details`, one item each for the mandatory set, the N/A
-   candidates, the approvers and any custom documents. Options: `confirm` (recommended), plus
-   up to three of the likeliest changes, such as `also require <document>` for the documents
-   the sources touch but the proposal leaves out, or `no approvers needed` when approvers are
-   named. Raise none
-   when the setup was already agreed (a `Setup agreed` line in `notes.md`) and the manifest has
-   nothing new.
+   the proposed `.clarity/config.yml` and returns a short summary: a checklist of every
+   document (included, left out, or N/A candidate with its evidence), the approvers named so
+   far, and any custom documents. Raise **one** `setup` question, first in the file, asking
+   which documents this project should have and who approves what. Put the checklist in
+   `details`, one item per document, in the form `[x] <path>: <what it is>` or
+   `[ ] <path>: <why it is left out>`, then one item each for the approvers and any custom
+   documents. Options: `confirm` (recommended), plus up to three of the likeliest changes,
+   such as `also include <document>` for the documents the sources touch but the proposal
+   leaves out, or `no approvers needed` when approvers are named. The person can also answer
+   in their own words, naming the documents to add or drop.
+
+   Raise it even when a brief or another source already says which documents to write:
+   that shapes the proposal, and a person still confirms it. Raise none only when
+   `clarity-configure` returned "setup already agreed" (a `Setup agreed` line in `notes.md`
+   and nothing new in the manifest) or "setup follows config.yml (static)" (the config says
+   `setup: static`).
 3. **Steps 3–4** as written. Use the proposed config for the effective manifest. For a
    `complete` document the new material would change, don't change it: raise a `conflict`
    question showing in a few lines what would change.
-4. **Step 5, drafting only.** Run each stage's skills in their drafting-only form, failures
-   included, and skip the confirmations. Then raise questions:
-   - a `gap` or `conflict` question for each gap or conflict that stops a **mandatory**
-     document of the effective manifest from being completed;
+4. **Step 5, drafting only.** Run each stage's skills unattended, failures included: pass
+   `auto`, and each skill follows its **Unattended** rules. Skip the confirmations. Hold
+   every drafted document to **The quality bar** and fix what fails. Then raise questions:
+   - first, fill every gap you can answer yourself (see **Ask a person only what needs a
+     person**), marked as inferred. Then a `gap` or `conflict` question for each gap or
+     conflict that is left and stops a **mandatory** document of the effective manifest from
+     being completed. That includes **every** required section of a mandatory document still
+     holding a placeholder, template text or a `[TBD …]` note. Offer leaving it out, or
+     recording it as not known, as an option when the sources can't fill it.
+     Raise them all now, in this round: one found later costs the person a whole extra round;
    - a `gap` question (document `goal/open-questions.md`) for each unresolved question with
-     `**Blocking:** yes`, instead of running its strategy skill with the user.
+     `**Blocking:** yes`, instead of running its strategy skill with the user. Offer
+     `it doesn't have to block` as an option when solution work can go on without the
+     answer;
+   - a `gap` question (document: the ADR's path, such as `decisions/ADR-002-store.md`) for
+     each ADR that is `proposed` or `reconsider`, when `decisions/index.md` is mandatory.
+     The question is the ADR's question, the options are its options, and `recommended` is
+     its recommendation.
+
+   Ask about what the foundation exists to settle, and only where it needs a person:
+   anything that, left open, each feature would decide for itself (the stack and what may be
+   added to it, how data is kept safe, what is tested and how, who it is for). Where the
+   sources, the code or a sensible default settle a point, don't ask: write it as a rule,
+   marked as inferred, and name it in the review question so the person can correct it.
 
    Gaps in non-mandatory documents stay as placeholder notes and are not asked. Put the
    question's id in its placeholder note (`[TBD — … (Q-007)]`) so `apply` finds the spot.
@@ -323,10 +358,21 @@ Unattended: never ask anything. Apply every answered question that isn't `obsole
 
 - **setup**: invoke `clarity-configure` with `apply` and the answer. `confirm` keeps the
   proposal and makes its N/A candidates real; corrections rewrite `config.yml` as the answer
-  says. Then scaffold and draft any newly mandatory documents (steps 3–5 of `draft`), which may
-  raise new gap questions.
+  says. Then scaffold and draft any newly mandatory documents (items 3 and 4 of `draft`),
+  which may raise new gap questions.
 - **gap** and **conflict**: apply the answer to its document, replacing the placeholder that
   names the question. Add `Q-### (answered_by)` to the document's `sources:`. It stays draft.
+  Two kinds of gap have no placeholder:
+  - **A blocking open question** (document `goal/open-questions.md`). Add the answer to the
+    question's Findings. When it settles the question, move it to
+    `goal/resolved-questions.md` with a Resolution, as `clarity-problem` describes, and
+    update the documents the answer changes. When the answer is that it doesn't have to
+    block, set `**Blocking:** no`. Otherwise leave it open and raise a new question saying
+    what is still needed.
+  - **An ADR** (document: the ADR's path). When the answer chooses an option, record it
+    with `clarity-decision`'s rules (see its **Answers in the questions file**): the ADR
+    becomes `accepted`, chosen by `answered_by`. Otherwise it stays as it is, and you raise
+    a new question.
 - **review**: `confirm` marks every mandatory document of the effective manifest complete, as
   step 5.3 describes (placeholders removed, `reviewed.hash` and `reviewed.deps` written with the
   `hash_command`), or `n/a` with its reason from the config. Corrections are applied instead,
@@ -342,10 +388,16 @@ Then, in a new round:
 1. **Recheck once.** Run step 6 unattended. Don't re-confirm anything: documents that are stale
    or edited go into **one** new `review` question that says what changed.
 2. **Review.** When no setup, gap, conflict or review question is pending and some mandatory
-   document isn't complete or n/a, raise **one** `review` question (`free_text: true`). The
+   document isn't complete or n/a, raise **one** `review` question (`free_text: true`).
+   First check every mandatory document for anything still open (a placeholder, template
+   text, a `[TBD …]` note, an ADR that is `proposed` or `reconsider`, an unresolved
+   `**Blocking:** yes` question). If you find any, raise those as `gap` questions instead and no
+   review this round: a confirmed review can't complete a document that is still open, so
+   asking it now would only add a round. Hold the documents to **The quality bar** once
+   more before you ask: the review is the last look a person gets. The
    question asks to confirm the foundation or say what to correct. Its `details` summarize it,
-   one item per mandatory document: what it says, what was inferred and from where; then one
-   item for the N/A list with reasons. Options: `confirm` (recommended), plus a named
+   one item per mandatory document: what it says, and each rule that was inferred rather
+   than stated, with where it came from; then one item for the N/A list with reasons. Options: `confirm` (recommended), plus a named
    correction for each weak inference worth a look (for example `NFR-001: make it 5 s, not
    1 s`), at most three.
 3. **Approvals.** After a confirmed review, when every mandatory document is complete or n/a,
@@ -353,7 +405,8 @@ Then, in a new round:
    config's `approvals`) whose approval is missing or outdated, unless one is already pending.
    Name the documents in the question, and record their current body hashes under `hashes`.
 
-`apply` marks documents complete **only** from a recorded `confirm` review answer, and records
+`apply` marks documents complete **only** from a recorded `confirm` review answer, accepts an
+ADR **only** from an answer that chooses one of its options, and records
 approvals **only** from an approval question answered by its approver. End with one line: what
 was applied, and how many questions are pending, by kind.
 
@@ -365,9 +418,10 @@ person in this conversation:
 1. Run `draft`.
 2. Ask the pending questions here, in the file's order, a few at a time, in plain words. Show
    each question with its `details` as bullets, then the options and the recommendation; say
-   that the person can accept it, pick another option or answer in their own words. Ask an approval question only of its approver: ask the person's name
-   once, and accept it if it matches (ignoring case), as `clarity-approve` does. Approvals of
-   people who aren't here stay pending.
+   that the person can accept it, pick another option or answer in their own words. Ask an
+   approval question only of its approver: ask the person's name once, and accept it if it
+   matches (ignoring case), as `clarity-approve` does. Approvals of people who aren't here
+   stay pending.
 3. Record each answer in `.clarity/questions.yml`: `answer`, `answered_by` (the person's name,
    for an approval the approver's name as the config lists it) and `answered_at` (now, ISO
    date-time). With `free_text: false`, the answer must be one of the options.
@@ -394,6 +448,60 @@ validator as its own step.)
 `auto` **never** sets `status: complete` or `n/a`, never writes `reviewed` hashes, and never
 records approvals. Those need a person.
 
+## The quality bar
+
+These documents are the foundation: every feature is specified, planned and reviewed against
+them, so a vague or missing rule gets decided again, differently, in each feature. Read what
+was written as the person who has to build from it, and fix what fails:
+
+- **It decides something.** Each sentence tells a builder or a reviewer what to do or check
+  in this project. A sentence that would be just as true of any project is filler: sharpen
+  it or cut it.
+- **It goes beyond the sources.** A source repeated in other words adds nothing. Work out
+  what it implies and what it leaves out: the edge case, the unstated rule, what the
+  workaround costs, the thing every feature would otherwise guess. A point the sources are
+  silent on becomes a rule you can defend from them, marked as inferred, and a question only
+  when it needs a person (see **Ask a person only what needs a person**). It is never left
+  out because nobody mentioned it.
+- **It can be checked.** Success criteria, requirements, standards, principles and
+  conventions each say how someone would verify them, one item per line.
+- **It is traceable and honest.** What comes from a source or an answer is in `sources:`.
+  What you inferred is marked as inferred. Nothing is invented: no made-up numbers, users,
+  endpoints or tools.
+- **The documents agree.** Every ID cited exists. Scope, numbers and the names of
+  components, entities and states are the same wherever they appear. Each requirement and
+  constraint is met somewhere downstream, or the gap is noted.
+- **It is about the project, not the process.** A remark such as "not yet examined with the
+  user" or "taken from the brief" belongs in `notes.md` or in a question, never in a
+  document.
+- **Nothing essential falls between documents.** When the setup leaves a document out, the
+  rules it would have carried that every feature needs (the stack, a security rule, a data
+  rule) go into `goal/requirements.md` as constraints or standards, or into a question.
+
+## Ask a person only what needs a person
+
+Every question costs a person time and, unattended, a whole round. Before raising or asking
+one, in any mode, try to answer it yourself from, in order: the sources supplied, the
+repository (code, configuration, dependencies, README, tests, git history), the other
+`.clarity/` documents and earlier answers, and established practice for this kind of project.
+When that gives an answer you can defend, write it, mark it as inferred and say where it came
+from, and list it in the review so the person can correct it. Don't ask.
+
+Ask a person only for what nobody else can supply:
+
+- **Intent and priorities**: what they want, for whom, what matters most, what is out of scope.
+- **Facts only they hold**: real users, numbers, targets, budgets, deadlines, owners,
+  agreements, anything outside the sources and the repo.
+- **Trade-offs with real consequences** where the sources, the code and practice leave two or
+  more options defensible, and the choice is theirs to own.
+- **Conflicts** between sources, or between a source and confirmed work, that the material
+  itself can't settle.
+- **Confirmations and approvals**: setup, review and sign-off always need a person.
+
+Never ask what a file you can read answers, what the code already decided, a detail a builder
+would settle with any reasonable default, or a question just to have it on record. When you're
+unsure whether a point needs a person, infer it and name it in the review.
+
 ## Rules
 
 - Write only inside `.clarity/` (prototypes only in `.clarity/prototypes/`). Never change the
@@ -401,12 +509,10 @@ records approvals. Those need a person.
 - Never mark a document complete or N/A without the user's confirmation: in `draft` and
   `apply`, only a recorded `confirm` review answer is one. Never decide N/A alone, and never N/A
   a `never_na` document.
-- In `draft` and `apply`, never ask anything, and never record an approval except from an
-  approval question answered by its approver.
+- In `draft` and `apply`, never ask anything. Never accept an ADR except from an answer that
+  chooses one of its options, and never record an approval except from an approval question
+  answered by its approver.
 - Keep documents narrative and brief: people and LLMs both read them. Cut what carries no
   information.
 - Keep `notes.md` as shared memory: guiding principles, `[for: <skill>]` items for a later
   skill, inputs summaries, and progress. Keep it compact.
-
-Adapted in part from microsoft/clarity-agent (processes/clarity-agent.md), MIT License. See
-LICENSE.txt.

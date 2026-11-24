@@ -50,11 +50,12 @@ of `.clarity/` documents, as named in the shipped manifest
    Brainstorming on the problem alone is fine if the solution isn't fleshed out yet: it
    surfaces important failures early. More context makes the failures more specific.
 2. **Pick the thinkers.** A thinker is eligible when every document in its
-   `prerequisites.required` exists and is not `status: draft`. Run
-   `codebase-scanner-thinker` only when the repo has code. If the arguments name thinkers,
-   run those (still checking prerequisites). Tell the user in one line which thinkers will
-   run and which are skipped and why; if the user asks for a skipped one anyway, run it and
-   note the draft inputs in its file.
+   `prerequisites.required` exists and has been drafted: it holds real content, not only
+   its template's placeholders. It doesn't have to be confirmed. Brainstorming on a draft
+   is fine and often the point; the output file's header then says which inputs were still
+   drafts. Run `codebase-scanner-thinker` only when the repo has code. If the arguments
+   name thinkers, run those (still checking prerequisites). Tell the user in one line which
+   thinkers will run and which are skipped and why.
 3. **Choose each output file.** Each thinker writes
    `.clarity/failures/brainstorm/<name>.md`, where `<name>` is its `name` without the
    `-thinker` suffix (`general.md`, `security.md`, `security-catalog.md`,
@@ -104,11 +105,8 @@ of `.clarity/` documents, as named in the shipped manifest
 - Write as you go, so nothing is lost if the run stops.
 - Never touch another thinker's file or an earlier run's file. Never edit
   `failures/failures.md` or the failure documents; that is failure analysis.
-- With no one to ask (`auto` mode), skip step 6 and say that human contributions are still
-  open.
+- Unattended (`/clarity` passed `auto`, `COMPOSE_RUN_ID` is set, or nobody is present): ask nothing, run every eligible thinker, skip
+  step 6 and the offers in steps 5 and 7, and say that human contributions are still open.
 - **When `/clarity` called you**, return to it with the list of new brainstorm files.
   **When run directly**, suggest `/clarity-failure-analysis` next (or `/clarity` to
   continue).
-
-Adapted from microsoft/clarity-agent (processes/failure-brainstorming.md and thinkers/*.md),
-MIT License. See LICENSE.txt.

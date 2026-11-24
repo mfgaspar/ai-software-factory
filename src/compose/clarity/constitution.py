@@ -1,8 +1,12 @@
-"""The generated-from-clarity marker on ``.compose/memory/constitution.md``.
+"""The memory-index marker on ``.compose/memory/constitution.md``.
 
-In a clarity repo the constitution is generated from the clarity documents, and its first
-line records the clarity fingerprint it came from:
-``<!-- generated-from-clarity: <fingerprint> -->``.
+In a clarity repo the constitution is the index of ``.compose/memory/``, published from the
+clarity documents (:mod:`compose.clarity.memory`). Its first line records the clarity
+fingerprint it came from: ``<!-- memory-index: <fingerprint> -->``.
+
+Before memory was published, a model wrote the constitution and compose stamped it
+``<!-- generated-from-clarity: <fingerprint> -->``. That legacy marker no longer counts as
+current: the repo has no memory files until clarity is validated again.
 """
 
 from __future__ import annotations
@@ -11,14 +15,19 @@ import re
 from pathlib import Path
 
 from compose.repos import git
-from compose.runner.state import atomic_write
 
 CONSTITUTION_FILE = ".compose/memory/constitution.md"
-_MARKER = re.compile(r"^<!-- generated-from-clarity: (\S*) -->$")
+_MARKER = re.compile(r"^<!-- memory-index: (\S*) -->$")
+_LEGACY_MARKER = re.compile(r"^<!-- generated-from-clarity: (\S*) -->$")
 
 
 def marker(fingerprint: str) -> str:
-    return f"<!-- generated-from-clarity: {fingerprint} -->"
+    return f"<!-- memory-index: {fingerprint} -->"
+
+
+def is_legacy(text: str) -> bool:
+    """``text`` is a constitution a model generated from clarity, before memory existed."""
+    return _LEGACY_MARKER.match(text.split("\n", 1)[0].rstrip("\r")) is not None
 
 
 def read_text(text: str) -> str | None:
@@ -26,14 +35,6 @@ def read_text(text: str) -> str | None:
     first = text.split("\n", 1)[0].rstrip("\r")
     match = _MARKER.match(first)
     return (match.group(1) or None) if match else None
-
-
-def stamp(path: Path, fingerprint: str) -> None:
-    """Add the marker as ``path``'s first line, replacing one that's already there."""
-    text = path.read_text(encoding="utf-8")
-    if _MARKER.match(text.split("\n", 1)[0].rstrip("\r")):
-        text = text.split("\n", 1)[1] if "\n" in text else ""
-    atomic_write(path, f"{marker(fingerprint)}\n{text}")
 
 
 def read_ref(root: Path, ref: str) -> str | None:

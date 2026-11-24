@@ -1,60 +1,87 @@
-# Using the clarity documents in compose
+# Using the project memory in compose
 
-Read this when the repository has a `.clarity/` folder. Without one, ignore it.
+Read this when the constitution (`.compose/memory/constitution.md`) is a **memory index**:
+its first line is `<!-- memory-index: … -->`. When it isn't, the constitution is a plain
+list of principles: follow it as written and ignore this guide.
 
-**Clarity** works at the application level. It holds the **why** (problem, users, goals), the
-**rules** (non-functional requirements, constraints, standards, product principles, UX
-standards, API conventions, data rules) and the application's **how** (solution, architecture,
-tech stack, ADRs, environments). **compose** works one feature at a time. It defines the
-**what** (the spec's user stories and `FR-###`), then the feature's **how** (its plan,
-contracts, data, tasks), always inside clarity's rules. compose never redefines a clarity rule.
+The project's foundation is written and approved with **clarity**, at the application
+level. It holds the **why** (problem, users, goals), the **rules** (non-functional
+requirements, constraints, standards, product principles, UX standards, API conventions,
+data rules) and the application's **how** (solution, architecture, tech stack, ADRs,
+environments). compose publishes it to `.compose/memory/`, one file per document, with the
+approved text unchanged. **compose** works one feature at a time. It defines the **what**
+(the spec's user stories and `FR-###`), then the feature's **how** (its plan, contracts,
+data, tasks), always inside the foundation's rules. A feature never redefines one.
 
-## Which documents count
+`.compose/memory/` is the only place to read the foundation. Don't open `.clarity/`: that is
+where it is drafted, and it may hold work nobody has confirmed.
 
-`compose feature paths --json` returns a `clarity` entry: `null` when there's no `.clarity/`
-folder, or `{dir, guide, documents}`, where `documents` maps each path (relative to
-`.clarity/`) to its declared `status`. Without a feature, read the same `status` field from each
-document's front matter. Then:
+## Which files to open
 
-- `complete`: **binding**. Follow it, and cite it.
+The index has one row per file: what it **holds**, when to **read** it, and its
+**standing**. Paths in the table are relative to `.compose/memory/`.
+
+1. Read the index at every step.
+2. Open every file whose Read column says **always at** and names your step.
+3. Open any other file whose **when** is true of this feature. When you can't tell, open it.
+4. When a spec, plan or task cites an ID (`NFR-004`, `ADR-002`), the Holds column says
+   which file defines it. Open that file before you rely on the ID.
+
+Open nothing else: the point of the index is to load only what the step needs.
+
+Each skill reads as one step:
+
+| Skill | Step |
+|---|---|
+| `compose-specify` | specify |
+| `compose-clarify` | clarify |
+| `compose-plan` | plan |
+| `compose-tasks` | tasks |
+| `compose-implement`, `compose-converge`, `compose-bug-fix` | implement |
+| `compose-analyze` | analyze |
+
+## Standing
+
+- `binding`: confirmed. Follow it, and cite it.
 - `draft`: **a hint**. Use it, but mark what you take from it as an assumption ("per draft
   architecture"). Don't treat it as settled.
-- `n/a`: doesn't apply. Skip it.
-- ADRs (`decisions/ADR-*.md`): only `accepted` ones are binding. `proposed` and `reconsider`
-  ones are hints. Ignore `superseded` and `rejected` ones.
+- `ideas`: suggestions for features. Not rules.
 
-The status is what the document declares. It's not a full check: `/clarity-validate` gives that.
+Only accepted ADRs are published, so every ADR in memory is binding. A document listed
+under **Not applicable** doesn't exist for this project: don't look for it.
 
-## What each step reads
+## What each step uses it for
 
-| Step | Reads from `.clarity/` | Uses it to |
-|---|---|---|
-| constitution | `goal/requirements.md` (NFR, CON, STD), `product/prd.md` (product principles), accepted ADRs, `failures/failures.md` (mitigations that apply everywhere), `product/ux-standards.md`, `contracts/api.md`, `data/data-model.md`, `ops/setup-guide.md` | Turn rules into checkable principles. Each principle cites its source in brackets, e.g. `[STD-002]`, `[ADR-003]`. |
-| specify | `goal/problem.md`, `goal/stakeholders.md`, `product/prd.md` (goals `G-###`, scope boundaries, principles), `goal/requirements.md`, the `## Feature ideas` in `notes.md` | Pick the actors and the goal the feature serves. Stay within the scope boundaries. Don't ask what these already answer. Functional requirements stay technology-agnostic. |
-| plan | `solution/architecture.md`, accepted ADRs, `contracts/api.md`, `data/data-model.md`, `product/ux-standards.md`, `ops/setup-guide.md`, `goal/requirements.md`, `failures/failures.md` | Take the stack and components from the architecture and ADRs: don't research what an ADR settled. The feature's contracts follow the API conventions and extend any published `spec`. Its data extends the core entities and follows the data rules. Its screens follow the UX standards. |
-| tasks | `failures/failures.md`, `goal/requirements.md` (STD), `ops/setup-guide.md` | Add a task for each failure mitigation that touches this feature, the tests the standards require, and any setup or configuration step. |
-| analyze | all of the above | Check that the spec cites the goal it serves, the plan breaks no NFR, standard or accepted ADR, and the tasks cover the mitigations. |
+| Step | Uses the files it opens to |
+|---|---|
+| specify, clarify | Pick the actors and the goal (`G-###`) the feature serves. Stay within the scope boundaries. Don't ask what these files already answer. Functional requirements stay technology-agnostic. Start from an item in `feature-ideas.md` when the description names one. |
+| plan | Take the stack and components from the architecture and ADRs: don't research what an ADR settled. The feature's contracts follow the API conventions and extend any published spec the index names. Its data extends the core entities and follows the data rules. Its screens follow the UX standards. |
+| tasks | Add a task for each failure mitigation that touches this feature, the tests the standards require, and any setup or configuration step. |
+| implement | Write code that keeps the binding rules: non-functional requirements, constraints, standards and accepted ADRs. |
+| analyze | Check that the spec cites the goal it serves, the plan breaks no NFR, standard or accepted ADR, and the tasks cover the mitigations. Analyze opens every file. |
 
-## The constitution
+## The binding rules
 
-In a clarity repo, the constitution is generated: `/compose-constitution from-clarity`
-regenerates the whole file from the documents in the constitution row above, and compose
-stamps its first line with the clarity fingerprint it came from. Hand edits are overwritten by
-the next clarity run; change the clarity documents instead.
+There are no principles written out in the index. Wherever a skill checks "the
+constitution's principles", check the **binding rules** instead: every `NFR-###`,
+`CON-###` and `STD-###`, every product principle, and every accepted ADR, in the binding
+files your step opens. A MUST in one of them is a constitution MUST.
 
 ## Citing
 
 - **Spec:** under the feature's summary, add a `Serves:` line with the goals (`G-###`) and the
   rules that apply (`NFR-###`, `CON-###`, `STD-###`). The spec's own `FR-###` are numbered per
-  feature and never reuse clarity IDs.
+  feature and never reuse the foundation's IDs.
 - **Plan:** extend the constitution check with a **Clarity check**: one row for each applicable
-  NFR, constraint, standard, accepted ADR and convention document, saying how the plan complies.
+  NFR, constraint, standard, accepted ADR and convention file, saying how the plan complies.
 
 ## Conflicts
 
-compose never edits `.clarity/`.
+compose never edits `.compose/memory/` or `.clarity/`. The memory files are generated:
+a change belongs in the clarity documents, made with `/clarity`, and compose publishes
+them again.
 
-- **A feature needs to break a clarity rule** (a binding document or accepted ADR): in an
+- **A feature needs to break a binding rule** (a binding file or accepted ADR): in an
   interactive session, say so and ask whether to change the feature or revisit the rule with
   `/clarity`. In a headless run (`COMPOSE_RUN_ID` is set), keep the feature within the rule
   where you can. Where you can't, record the conflict under the spec's Assumptions or the

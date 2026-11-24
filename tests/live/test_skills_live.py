@@ -12,6 +12,7 @@ from compose.core.models import RunStatus
 from compose.engines.claude.install import check
 from compose.engines.registry import default_registry
 from compose.runner.runner import Runner
+from compose.tracking import journal
 from tests.unit.runner_helpers import Env
 
 pytestmark = pytest.mark.live
@@ -69,5 +70,7 @@ async def test_specify_then_plan(env: Env) -> None:
     assert specify.cost_usd > 0 and plan_step.cost_usd > 0
     assert specify.files_changed >= 2 and plan_step.files_changed >= 1
     # compose's installed skills are not counted as changes
-    paths = [row[0] for row in env.db.conn.execute("SELECT path FROM file_changes")]
+    paths = [
+        c.path for s in (specify, plan_step) for c in journal.read_changes(env.files(run), s.id)
+    ]
     assert paths and not any(p.startswith((".claude/", ".compose/templates/")) for p in paths)

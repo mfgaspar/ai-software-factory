@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import getpass
 import json
 import os
 import sys
@@ -12,7 +13,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from compose import notify
+from compose import notify, telemetry
 from compose.clarity import branch as clarity_branch
 from compose.clarity import preflight
 from compose.clarity.questions import Question
@@ -22,7 +23,6 @@ from compose.core.db import Database, utcnow
 from compose.core.home import Home
 from compose.core.ids import new_id
 from compose.core.models import (
-    Action,
     ExecStatus,
     Feature,
     Repo,
@@ -39,9 +39,9 @@ from compose.engines.base import (
     UsageEvent,
 )
 from compose.engines.registry import EngineError, EngineRegistry, default_registry
-from compose.repos import features
+from compose.repos import features, git
 from compose.repos.git import GitError
-from compose.repos.worktrees import ensure_feature_worktree
+from compose.repos.worktrees import commit_all, ensure_feature_worktree, merge_into_default
 from compose.runner import hooks
 from compose.runner.context import Scope, step_result
 from compose.runner.errors import (
@@ -56,7 +56,7 @@ from compose.runner.errors import (
 from compose.runner.state import CompletedStep, RunFiles, RunState, check_transition
 from compose.runner.steps import clarity, control, engine, gate, questions, shell, subworkflow
 from compose.runner.steps.base import Outcome
-from compose.tracking import records
+from compose.tracking import journal, records
 from compose.tracking.aggregate import LEAF
 from compose.workflows import expressions, loader
 from compose.workflows.schema import (
@@ -94,11 +94,22 @@ CONTROL_EXECUTORS: dict[str, LeafExecutor] = {
 }
 
 
+def _starter(path: Path) -> str:
+    """Who starts a run on this machine: the git user name, else the OS user."""
+    try:
+        name = git.user_name(path)
+    except OSError:
+        name = None
+    return name or getpass.getuser()
+
+
 @dataclass
 class Interaction:
     """How a run talks to a person, when one is present."""
 
     interactive: bool = False
+    auto_approve: bool = False  # gates take "approve" and confirmations say yes
+    on_auto_approve: Callable[[str, str], None] | None = None  # (gate message, choice taken)
     ask_input: Callable[[str, InputSpec], str] | None = None
     ask_gate: Callable[[str, list[str]], str] | None = None
     ask_confirm: Callable[[str], bool] | None = None
@@ -155,10 +166,7 @@ class RunContext:
         self.shared = shared
         self.results: dict[str, dict[str, Any]] = {}
         self.fan_results: dict[str, list[Any]] = {}
-        row = runner.db.conn.execute(
-            "SELECT COALESCE(MAX(seq), 0) FROM actions WHERE run_id = ?", (run.id,)
-        ).fetchone()
-        self._seq = int(row[0])
+        self._seq = files.action_count()
 
     # ------------------------------------------------------------------ helpers
 
@@ -202,6 +210,7 @@ class RunContext:
                 "repo": {"id": self.repo.id, "name": self.repo.name, "dir": str(self.worktree)},
                 "feature": self._feature_context(),
                 "constitution_exists": constitution.exists(),
+                "engine": self.definition.workflow.engine or self.runner.config.defaults.engine,
             },
             **scope.extras,
         }
@@ -291,6 +300,8 @@ class RunContext:
         self.files.append_event(event)
         if self.runner.on_event is not None:
             self.runner.on_event(event)
+        if self.runner.telemetry is not None:
+            self.runner.telemetry.handle(event)
 
     # ---------------------------------------------------------------- recording
 
@@ -307,9 +318,9 @@ class RunContext:
         duration_ms: int | None = None,
     ) -> int:
         self._seq += 1
-        store.insert(
-            self.db,
-            Action(
+        journal.append_action(
+            self.files,
+            journal.Action(
                 run_id=self.run.id,
                 step_exec_id=step_exec_id,
                 hook_exec_id=hook_exec_id,
@@ -440,6 +451,8 @@ class RunContext:
             key=key,
             step_type=row.step_type,
             parent_exec_id=scope.parent_exec_id,
+            name=step.name,
+            quiet=step.quiet,
         )
 
         plan = (
@@ -567,7 +580,7 @@ class RunContext:
             # Kept apart while paused so a resumed gate doesn't count its hooks twice.
             hooks.fold_hook_metrics(self.db, row)
         store.update(self.db, row)
-        self.files.write_step_record(row.id, records.step_record(self.db, row))
+        self.files.write_step_record(row.id, records.step_record(self.db, self.files, row))
         self.emit(
             "step_finished",
             exec_id=row.id,
@@ -585,7 +598,7 @@ class RunContext:
         changes its own tracking recorded.
         """
         own_changes = (row.files_changed, row.lines_added, row.lines_removed)
-        totals = self.db.conn.execute(
+        totals = self.db.execute(
             f"""
             WITH RECURSIVE tree(id) AS (
                 SELECT id FROM step_execs WHERE parent_exec_id = ?
@@ -610,7 +623,7 @@ class RunContext:
         if row.step_type == "fan-out":
             row.files_changed, row.lines_added, row.lines_removed = own_changes
             return
-        changes = self.db.conn.execute(
+        changes = self.db.execute(
             f"""
             WITH RECURSIVE tree(id) AS (
                 SELECT id FROM step_execs WHERE parent_exec_id = ?
@@ -649,6 +662,7 @@ class Runner:
         self.config = config or load_config(home)
         self.interaction = interaction or Interaction()
         self.on_event = on_event
+        self.telemetry = telemetry.create(db, self.config)
         self.last_warnings: list[str] = []  # the pre-run check's, from the last create_run
 
     # ---------------------------------------------------------------- creating
@@ -742,6 +756,7 @@ class Runner:
             workflow_id=definition.id,
             workflow_version=definition.workflow.version,
             inputs=resolved,
+            started_by=_starter(Path(repo.path)),
         )
         files = RunFiles(self.home.run_dir(run.id))
         files.create(loaded.path.read_text(), resolved)
@@ -766,7 +781,7 @@ class Runner:
 
     def _check_no_repo_run(self, repo: Repo) -> None:
         """One active repo-scoped run per repo, paused ones included."""
-        row = self.db.conn.execute(
+        row = self.db.execute(
             "SELECT id, status FROM runs WHERE repo_id = ? AND feature_id IS NULL"
             " AND parent_run_id IS NULL AND status IN (?, ?) ORDER BY created_at LIMIT 1",
             (repo.id, RunStatus.RUNNING.value, RunStatus.PAUSED.value),
@@ -858,7 +873,7 @@ class Runner:
                 raise RunError(f"Could not install {name} files in {worktree}: {exc}") from exc
 
     def _spent(self, root_run_id: str) -> float:
-        row = self.db.conn.execute(
+        row = self.db.execute(
             f"""
             WITH RECURSIVE tree(id) AS (
                 SELECT id FROM runs WHERE id = ?
@@ -919,9 +934,20 @@ class Runner:
             )
             rc = RunContext(self, run, definition, files, state, repo, feature, worktree, shared)
             if feature is not None:
-                rc.emit("run_started", feature=feature.name, worktree=str(worktree))
+                rc.emit(
+                    "run_started",
+                    workflow=definition.workflow.name,
+                    feature=feature.name,
+                    worktree=str(worktree),
+                )
             else:
-                rc.emit("run_started", feature=None, scope="repo", worktree=str(worktree))
+                rc.emit(
+                    "run_started",
+                    workflow=definition.workflow.name,
+                    feature=None,
+                    scope="repo",
+                    worktree=str(worktree),
+                )
             watcher = asyncio.create_task(self._watch_abort(run.id, shared))
             try:
                 await self._drive(rc)
@@ -991,6 +1017,8 @@ class Runner:
             run.outputs = outputs
             run.current_step_id = None
             state.current_step_id = None
+            if self._commit_feature(rc, RunStatus.COMPLETED):
+                self._merge_feature(rc)
             self._set_status(run, state, files, RunStatus.COMPLETED)
             rc.emit("run_finished", status="completed", outputs=outputs)
             self._notify(rc, "completed")
@@ -998,6 +1026,7 @@ class Runner:
             run.error = paused.reason
             state.error = paused.reason
             self._commit_clarity(rc, RunStatus.PAUSED)
+            self._commit_feature(rc, RunStatus.PAUSED)
             self._set_status(run, state, files, RunStatus.PAUSED)
             rc.emit("run_paused", step_id=paused.step_id, reason=paused.reason)
             self._notify(rc, self._waiting_for(rc, paused))
@@ -1007,6 +1036,7 @@ class Runner:
             run.error = aborted.reason
             state.error = aborted.reason
             self._commit_clarity(rc, RunStatus.ABORTED)
+            self._commit_feature(rc, RunStatus.ABORTED)
             self._set_status(run, state, files, RunStatus.ABORTED)
             rc.emit("run_finished", status="aborted", reason=aborted.reason)
             if raise_on_stop:
@@ -1015,6 +1045,7 @@ class Runner:
             run.error = str(failed)
             state.error = str(failed)
             self._commit_clarity(rc, RunStatus.FAILED)
+            self._commit_feature(rc, RunStatus.FAILED)
             self._set_status(run, state, files, RunStatus.FAILED)
             rc.emit("run_finished", status="failed", error=str(failed))
             self._notify(rc, f"failed at {run.current_step_id or 'a step'}")
@@ -1063,9 +1094,45 @@ class Runner:
         if sha is not None:
             rc.emit("clarity_committed", sha=sha, message=message)
 
+    def _commit_feature(self, rc: RunContext, status: RunStatus) -> bool:
+        """A feature run that stops commits its worktree on the feature branch, so the work
+        shows in the repo (``git diff main...<branch>``) and can be merged from there. A
+        failure is recorded as an event and never changes the run's outcome. Returns
+        whether the branch now holds the run's work."""
+        if rc.feature is None or rc.run.parent_run_id is not None:
+            return False
+        state = "" if status is RunStatus.COMPLETED else f" ({status.value})"
+        message = (
+            f"{rc.feature.name}: {rc.definition.workflow.name}{state}\n\n"
+            f"Run {rc.run.id} ({rc.definition.id})."
+        )
+        try:
+            sha = commit_all(rc.worktree, message)
+        except Exception as exc:  # never mask the run's own outcome
+            rc.emit("feature_commit_failed", error=str(exc))
+            return False
+        if sha is not None:
+            rc.emit("feature_committed", sha=sha, branch=rc.feature.branch)
+        return True
+
+    def _merge_feature(self, rc: RunContext) -> None:
+        """A completed feature run fast-forwards the default branch to the feature branch
+        (config ``features.merge``), so the work shows in the repo's own folder. When it
+        can't, the reason is recorded and the run's outcome stays as it was."""
+        if rc.feature is None or not self.config.features.merge:
+            return
+        try:
+            reason = merge_into_default(rc.repo, rc.feature.branch)
+        except Exception as exc:  # never mask the run's own outcome
+            reason = str(exc)
+        if reason is None:
+            rc.emit("feature_merged", branch=rc.feature.branch)
+        else:
+            rc.emit("feature_merge_pending", branch=rc.feature.branch, reason=reason)
+
     async def _watch_abort(self, run_id: str, shared: Shared) -> None:
         while not shared.abort_event.is_set():
-            row = self.db.conn.execute(
+            row = self.db.execute(
                 "SELECT abort_requested FROM runs WHERE id = ?", (run_id,)
             ).fetchone()
             if row is not None and row[0]:

@@ -38,14 +38,14 @@ from compose.repos.worktrees import WorktreeError
 from compose.runner.errors import InputError, RunError
 from compose.runner.recovery import recover_stale_runs
 from compose.runner.runner import Runner
-from compose.runner.state import TransitionError
+from compose.runner.state import RunFiles, TransitionError
 from compose.tracking import records, views
 from compose.workflows import loader
 from compose.workflows.loader import WorkflowError
 
 log = logging.getLogger("compose.api")
 RunStatusName = Literal["created", "running", "paused", "completed", "failed", "aborted"]
-GroupByName = Literal["step", "run", "feature", "repo", "day"]
+GroupByName = Literal["step", "run", "feature", "repo", "day", "user"]
 
 
 # ------------------------------------------------------------------ bodies
@@ -331,7 +331,7 @@ def create_app(
         """Features from the repo's branches and specs folders, with their run counts."""
         found = registry.get_repo(server.db, repo)
         counts = dict(
-            server.db.conn.execute(
+            server.db.execute(
                 "SELECT f.name, COUNT(r.id) FROM features f"
                 " LEFT JOIN runs r ON r.feature_id = f.id AND r.parent_run_id IS NULL"
                 " WHERE f.repo_id = ? GROUP BY f.name",
@@ -448,17 +448,17 @@ def create_app(
         row = store.get(server.db, StepExec, exec_id)
         if row is None or row.run_id not in views.run_tree(server.db, run_id):
             raise views.ViewError(f"No step execution {exec_id!r} in run {run_id}")
-        return records.step_record(server.db, row)
+        return records.step_record(server.db, RunFiles(server.home.run_dir(row.run_id)), row)
 
     @app.get("/runs/{run_id}/trace", tags=["runs"], dependencies=auth)
     def get_trace(run_id: str, server: S, step: str | None = None) -> dict[str, Any]:
         """Every action per step, hooks nested."""
-        return views.trace(server.db, run_id, step)
+        return views.trace(server.db, server.home, run_id, step)
 
     @app.get("/runs/{run_id}/changes", tags=["runs"], dependencies=auth)
     def get_changes(run_id: str, server: S, step: str | None = None) -> dict[str, Any]:
         """Files and lines changed per step."""
-        return views.changes(server.db, run_id, step)
+        return views.changes(server.db, server.home, run_id, step)
 
     @app.get("/runs/{run_id}/events", tags=["runs"], dependencies=auth, response_model=None)
     def get_events(
@@ -601,7 +601,7 @@ def create_app(
         from_: Annotated[datetime | None, Query(alias="from")] = None,
         to: datetime | None = None,
     ) -> dict[str, Any]:
-        """Cost, tokens and changes grouped by step, run, feature, repo or day."""
+        """Cost, tokens and changes grouped by step, run, feature, repo, day or user."""
         found = registry.get_repo(server.db, repo) if repo else None
         feat = None
         if feature is not None:

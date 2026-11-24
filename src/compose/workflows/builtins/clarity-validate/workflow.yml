@@ -2,12 +2,11 @@ schema_version: "1.0"
 workflow:
   id: clarity-validate
   name: Validate the clarity foundation
-  version: 1.0.0
+  version: 1.1.0
   scope: repo
   description: >
-    Validates the clarity foundation and records the verdict; on PASS, regenerates the
-    constitution when it is out of date, commits on the clarity branch and fast-forwards
-    the default branch.
+    Validates the clarity foundation and records the verdict; on PASS, publishes it to
+    .compose/memory/, commits on the clarity branch and fast-forwards the default branch.
 steps:
   - id: validate
     command: clarity-validate
@@ -19,20 +18,16 @@ steps:
     action: record-verdict
     from_step: validate
 
-  - id: constitution-check
+  - id: memory-check
     type: if
-    # regenerate the constitution only on PASS, when it wasn't generated from this content
-    condition: "{{ steps.verdict.output.result == 'PASS' and not steps.verdict.output.constitution_current }}"
+    # publish on every PASS: it costs nothing, writes nothing when nothing changed, and
+    # picks up a compose upgrade that changes what is published
+    condition: "{{ steps.verdict.output.result == 'PASS' }}"
     then:
-      - id: constitution
-        command: compose-constitution
-        input:
-          args: from-clarity
-        engine_options:
-          allowed_tools: ["Bash(awk:*)", "Bash(git hash-object:*)"]
-      - id: stamp
+      - id: memory
+        name: Publish the memory files
         type: clarity
-        action: stamp-constitution
+        action: publish-memory
 
   - id: commit
     type: clarity

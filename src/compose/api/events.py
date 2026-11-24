@@ -45,7 +45,7 @@ def read(path: Path, after: int = 0, limit: int = 500) -> list[dict[str, Any]]:
 
 
 def _status(db: Database, run_id: str) -> str | None:
-    row = db.conn.execute("SELECT status FROM runs WHERE id = ?", (run_id,)).fetchone()
+    row = db.execute("SELECT status FROM runs WHERE id = ?", (run_id,)).fetchone()
     return None if row is None else str(row[0])
 
 

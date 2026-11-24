@@ -7,6 +7,7 @@ final :class:`EngineResult`.
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -44,6 +45,27 @@ class EngineOptions:
     max_cost_usd: float | None = None  # budget for this task (step limit or what the run has left)
     engine_options: dict[str, Any] = field(default_factory=dict)
     env: dict[str, str] = field(default_factory=dict)
+    # where the engine appends its whole session, one JSON object per line (kept for good)
+    transcript: Path | None = None
+
+
+class Transcript:
+    """Appends one JSON object per line, flushed as it goes, so a stopped or killed engine
+    keeps everything it did up to that point. Without a path it writes nothing."""
+
+    def __init__(self, path: Path | None) -> None:
+        self.path = path
+        if path is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+    def write(self, entry: dict[str, Any]) -> None:
+        if self.path is not None:
+            self.write_raw(json.dumps(entry, default=str))
+
+    def write_raw(self, line: str) -> None:
+        if self.path is not None:
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(line.rstrip("\n") + "\n")
 
 
 @dataclass(frozen=True)
@@ -56,12 +78,23 @@ class Usage:
     cache_write_tokens: int = 0
     cost_usd: float = 0.0
     turns: int = 0
+    # While a run goes, what it has cost so far at list price (cost_usd arrives at the end).
+    # For display only.
+    estimated_cost_usd: float = 0.0
 
 
 @dataclass(frozen=True)
 class MessageEvent:
     text: str
     kind: Literal["message"] = "message"
+
+
+@dataclass(frozen=True)
+class ThinkingEvent:
+    """The model's reasoning, when the engine passes it on readable."""
+
+    text: str
+    kind: Literal["thinking"] = "thinking"
 
 
 @dataclass(frozen=True)
@@ -87,7 +120,7 @@ class UsageEvent:
     kind: Literal["usage_update"] = "usage_update"
 
 
-EngineEvent = MessageEvent | ToolCallEvent | ToolResultEvent | UsageEvent
+EngineEvent = MessageEvent | ThinkingEvent | ToolCallEvent | ToolResultEvent | UsageEvent
 
 
 @dataclass(frozen=True)

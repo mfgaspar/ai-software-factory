@@ -30,6 +30,10 @@ log.
    one is missing, name the skill that creates it (`/compose-specify`, `/compose-plan`,
    `/compose-tasks`) and stop. Read the constitution at `constitution_file` if it exists
    and has been filled in; skip constitution checks if it is still the starter template.
+   When it is a memory index (its first line is `<!-- memory-index: … -->`), read the guide
+   at `.compose/templates/compose/clarity.md` and open the files the index lists for the
+   `implement` step. The constitution's principles are then the binding rules in those
+   files: the non-functional requirements, constraints, standards and accepted ADRs.
 2. **What is intended.** List, each with a short reference you can cite:
    - requirements (`FR-…`) and success criteria (`SC-…`) that need code to be met
      (leave out business outcomes measured after launch);

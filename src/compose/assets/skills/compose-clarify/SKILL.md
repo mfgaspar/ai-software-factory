@@ -22,9 +22,11 @@ $ARGUMENTS
    accessibility); integrations and dependencies; edge cases and failure handling;
    constraints and trade-offs; terminology; completion signals; existing
    `[NEEDS CLARIFICATION]` markers.
-   When the paths JSON has a non-null `clarity`, read the guide at `clarity.guide`. An area
-   the binding clarity documents already settle (users, non-functional qualities,
-   constraints, conventions) counts as clear: cite the document instead of asking.
+   Read the constitution at `constitution_file` if it exists. When it is a memory index
+   (its first line is `<!-- memory-index: … -->`), read the guide at
+   `.compose/templates/compose/clarity.md` and open the files the index lists for the
+   `clarify` step. An area the binding files already settle (users, non-functional
+   qualities, constraints, conventions) counts as clear: cite the file instead of asking.
 3. Pick at most **five** questions whose answers would change the architecture, the data
    model, the tasks, the tests or compliance. Skip anything trivial or better decided
    during planning. Order them by impact.

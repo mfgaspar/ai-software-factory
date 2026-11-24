@@ -149,3 +149,52 @@ def test_remove(git_repo: Path, tmp_path: Path) -> None:
         loader.remove_workflow(git_repo, "quick")
     with pytest.raises(loader.WorkflowError, match="No installed workflow"):
         loader.remove_workflow(git_repo, "ghost")
+
+
+def test_user_dir_follows_compose_home(compose_home: Path) -> None:
+    assert loader.user_workflows_dir() == compose_home.resolve() / "workflows"
+
+
+def test_user_workflow_resolves_without_a_repo(compose_home: Path) -> None:
+    write_wf(compose_home / "workflows/mine", "mine", "Mine")
+    loaded = loader.resolve("mine", None)
+    assert loaded.source == "user" and loaded.definition.workflow.name == "Mine"
+    assert any(i.id == "mine" and i.source == "user" for i in loader.list_workflows(None))
+
+
+def test_order_is_repo_then_user_then_builtin(git_repo: Path, compose_home: Path) -> None:
+    write_wf(compose_home / "workflows/quick", "quick", "User quick")
+    assert loader.resolve("quick", git_repo).source == "user"
+    write_wf(git_repo / ".compose/workflows/quick", "quick", "Repo quick")
+    assert loader.resolve("quick", git_repo).source == "repo"
+    listing = {(i.id, i.source): i for i in loader.list_workflows(git_repo)}
+    assert listing[("quick", "repo")].shadowed is False
+    assert listing[("quick", "user")].shadowed is True
+    assert listing[("quick", "builtin")].shadowed is True
+
+
+def test_user_workflow_cannot_use_clarity_steps(compose_home: Path) -> None:
+    write_wf(
+        compose_home / "workflows/sneaky",
+        "sneaky",
+        extra="  - id: c\n    type: clarity\n    action: commit\n",
+    )
+    with pytest.raises(loader.WorkflowError, match="internal"):
+        loader.resolve("sneaky", None)
+
+
+def test_add_and_remove_user_scope(compose_home: Path, tmp_path: Path) -> None:
+    src = write_wf(tmp_path / "src/flow", "flow")
+    loaded = loader.add_workflow(None, str(src), scope="user")
+    assert loaded.source == "user"
+    assert loaded.directory == compose_home.resolve() / "workflows/flow"
+    with pytest.raises(loader.WorkflowError, match="already installed"):
+        loader.add_workflow(None, str(src), scope="user")
+    loader.remove_workflow(None, "flow", scope="user")
+    assert not (compose_home / "workflows/flow").exists()
+
+
+def test_repo_scope_needs_a_repo(tmp_path: Path) -> None:
+    src = write_wf(tmp_path / "flow", "flow")
+    with pytest.raises(loader.WorkflowError, match="--user"):
+        loader.add_workflow(None, str(src))

@@ -68,12 +68,27 @@ migrations in the code"). Data held only by a third-party service may still need
 retention here; ask. Only on the user's agreement set `status: n/a` and a `reason:`. Never
 decide N/A alone.
 
-## Unattended (`auto`)
+## Questions
 
-When `/clarity` passes `auto`, or no person is present, ask nothing. Draft from the sources,
-the code and the other documents. Leave each gap as a `[TBD — <what's missing or
-conflicting>]` note, and propose any N/A only as a note. Never set `status: complete` or
-`n/a`, and never write `reviewed` hashes. Return the draft and its list of gaps.
+Ask a person only what a person must answer: their intent and priorities, facts only they
+hold (real users, numbers, deadlines, owners), a trade-off the material leaves open that is
+theirs to own, a conflict the sources can't settle, and confirmations. Anything you can work
+out from the sources, the code, the other `.clarity/` documents, earlier answers or
+established practice, decide yourself: write it, mark it as inferred with where it came
+from, and name it in your summary so the person can correct it. `/clarity` sets this out in
+**Ask a person only what needs a person**.
+
+## Unattended
+
+`/clarity` runs this skill unattended in its `auto`, `draft` and `apply` phases, and passes
+`auto`. Work the same way whenever `COMPOSE_RUN_ID` is set or no person is present. Ask
+nothing. Draft from the sources, the code and the other documents, drafts included. Fill
+what you can work out yourself (see **Questions**), marked as inferred, and leave a
+`[TBD — <what's missing or conflicting>]` note only for what a person must answer, in the
+section it belongs to,
+and propose any N/A only as a note. Never set `status: complete` or `n/a`, and never write
+`reviewed` hashes. Return the draft and its list of gaps: `/clarity` turns them into
+questions for a person.
 
 ## Finish
 
@@ -94,6 +109,9 @@ conflicting>]` note, and propose any N/A only as a note. Never set `status: comp
 
 ## Rules
 
+- The test of a rule: two people building different features from it would do the same
+  thing. Sharpen any rule that fails it, or ask. A rule that would fit any project is
+  filler.
 - Core entities and rules, not schemas. Feature tables come from each feature's plan.
 - Never copy real records from seed files or dumps into the document; describe their shape.
 - The code and migrations are the truth for what exists; the document may describe planned

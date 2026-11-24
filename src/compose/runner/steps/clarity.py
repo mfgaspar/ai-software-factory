@@ -1,7 +1,8 @@
 """The internal ``clarity`` step: compose's own bookkeeping in clarity runs.
 
 ``record-verdict`` reads the validator's last line and writes ``.clarity/verdict.yml``;
-``stamp-constitution`` marks the constitution with the fingerprint it came from;
+``publish-memory`` copies the documents to ``.compose/memory/`` and writes its index,
+stamped with the fingerprint it came from;
 ``commit`` commits the clarity paths on the clarity branch; ``merge`` fast-forwards the
 default branch after a PASS that still holds. Only built-in workflows may use it.
 """
@@ -11,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from compose.clarity import branch, constitution, fingerprint, service, verdict
+from compose.clarity import branch, constitution, fingerprint, memory, service, verdict
 from compose.core.models import StepExec
 from compose.repos.git import GitError
 from compose.runner.context import Scope
@@ -52,13 +53,15 @@ async def execute(rc: RunContext, step: ClarityStep, row: StepExec, scope: Scope
             fingerprint=fp,
             constitution_current=_constitution_fingerprint(workdir) == fp,
         )
-    if step.action == "stamp-constitution":
-        path = workdir / constitution.CONSTITUTION_FILE
-        if not path.is_file():
-            return Outcome.failed(f"no constitution at {constitution.CONSTITUTION_FILE}")
+    if step.action == "publish-memory":
         fp = fingerprint.of_dir(workdir)
-        constitution.stamp(path, fp)
-        return Outcome.ok(fingerprint=fp)
+        try:
+            published = memory.publish(workdir, fp)
+        except memory.PublishError as exc:
+            return Outcome.failed(f"could not publish {memory.MEMORY_DIR}: {exc}")
+        return Outcome.ok(
+            fingerprint=fp, written=len(published.written), removed=len(published.removed)
+        )
     if step.action == "commit":
         try:
             sha = branch.commit_paths(workdir, commit_message(rc))

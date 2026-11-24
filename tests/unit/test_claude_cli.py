@@ -181,7 +181,7 @@ def test_command_line(tmp_path: Path) -> None:
         "-p",
         "--output-format=stream-json",
         "--verbose",
-        "--permission-mode=acceptEdits",
+        "--permission-mode=auto",
         "--setting-sources=project",
         "--model=claude-haiku-5-5",
         "--max-turns=5",
@@ -265,12 +265,14 @@ def fake_cli(tmp_path: Path) -> dict[str, Any]:
     return {"script": str(script), "record": record, "work": work, "env": env}
 
 
-def _start(fake: dict[str, Any], mode: str = "ok") -> ClaudeCliRun:
+def _start(fake: dict[str, Any], mode: str = "ok", transcript: Path | None = None) -> ClaudeCliRun:
     run = ClaudeEngine().start(
         EngineTask.skill("compose-plan", "use -- flags"),
         fake["work"],
         EngineOptions(
-            env={**fake["env"], "FAKE_MODE": mode}, engine_options={"cli_path": fake["script"]}
+            env={**fake["env"], "FAKE_MODE": mode},
+            engine_options={"cli_path": fake["script"]},
+            transcript=transcript,
         ),
     )
     assert isinstance(run, ClaudeCliRun)
@@ -319,3 +321,28 @@ async def test_stop_kills_the_process(fake_cli: dict[str, Any]) -> None:
     assert run.result.status == "stopped"
     assert run.result.usage.output_tokens == 30  # what was seen before the stop
     await events.aclose()
+
+
+async def test_keeps_every_line_as_printed(fake_cli: dict[str, Any], tmp_path: Path) -> None:
+    transcript = tmp_path / "steps" / "x.transcript.jsonl"
+    run = _start(fake_cli, transcript=transcript)
+    _ = [e async for e in run.events()]
+    lines = [json.loads(line) for line in transcript.read_text().splitlines()]
+    task, rest = lines[0], lines[1:]
+    assert task["type"] == "compose_task" and task["prompt"] == "/compose-plan use -- flags"
+    assert task["permission_mode"] == "auto" and task["argv"][0] == fake_cli["script"]
+    assert rest == STREAM  # Claude Code's own output, unchanged
+
+
+async def test_a_crash_keeps_what_was_printed_and_stderr(
+    fake_cli: dict[str, Any], tmp_path: Path
+) -> None:
+    transcript = tmp_path / "t.jsonl"
+    run = _start(fake_cli, "crash", transcript)
+    _ = [e async for e in run.events()]
+    text = transcript.read_text().splitlines()
+    assert text[1] == "not json"  # kept even though it isn't JSON
+    assert json.loads(text[-1]) == {
+        "type": "compose_stderr",
+        "lines": ["not json", "Error: invalid API key"],
+    }

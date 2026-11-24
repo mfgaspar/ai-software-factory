@@ -48,9 +48,15 @@ lists all options.
 |---|---|---|
 | `mixed` (default) | drafts everything unattended, then asks only what is still open, in rounds, most important first, and applies the answers | answer the questions |
 | `auto` | drafts everything from the sources and asks nothing. The verdict is always FAIL; its questions stay in the questions file for a later mixed run or `compose clarity answer` | none |
-| `interactive` | starts Claude Code in the clarity worktree with `/clarity <sources> interactive`, attached to your terminal (the stage-by-stage conversation). When the session ends, compose runs `clarity-validate` as a tracked run | the whole conversation |
+| `interactive` | starts Claude Code (or Copilot, when `defaults.engine` is `copilot`) in the clarity worktree with `/clarity <sources> interactive`, attached to your terminal (the stage-by-stage conversation). When the session ends, compose runs `clarity-validate` as a tracked run | the whole conversation |
 
 `interactive` needs a terminal and can't be detached; the API offers `mixed` and `auto` only.
+
+In every mode the skills ask a person only what a person must answer: intent and priorities,
+facts only you hold (real users, numbers, deadlines, owners), trade-offs that are yours to own,
+conflicts the sources can't settle, and confirmations or approvals. Whatever they can work out
+from the sources, the code, the other documents or established practice, they write down
+themselves, marked as inferred, and list in the review question so you can correct it.
 
 ### How mixed works
 
@@ -65,14 +71,16 @@ A `mixed` run is the built-in `clarity` workflow:
    (`/clarity apply`) applies the answers and raises the next ones. The loop repeats while
    questions other than approvals are pending. The questions come in this order:
    - **setup**: confirm or correct the proposed mandatory set, N/A list and approvers;
-   - **gap** and **conflict**: what stops a mandatory document from being completed, and
-     unresolved blocking open questions;
+   - **gap** and **conflict**: what stops a mandatory document from being completed,
+     unresolved blocking open questions, and decisions (ADRs) still to be made. Your answer
+     to a decision question accepts the ADR in your name;
    - **review**: once nothing else is pending, one summary of the whole foundation, answered
      `confirm` or with corrections. `confirm` marks every mandatory document complete (or
      n/a with its reason);
    - **approval**: after a confirmed review, one per configured approver.
-3. **constitution** (`/compose-constitution from-clarity`) regenerates the constitution from
-   the documents, and compose stamps it with the clarity fingerprint.
+3. **memory**: compose publishes the documents to `.compose/memory/` and writes its index,
+   stamped with the clarity fingerprint (see [The published memory](#the-published-memory)).
+   No model is involved.
 4. **validate** (`/clarity-validate`); compose records the verdict, commits, and on PASS merges
    (see [The clarity branch](#the-clarity-branch)).
 
@@ -159,7 +167,7 @@ branch the first time.
 - **Before a run**, compose merges the default branch into `clarity`. A conflict refuses the
   run, naming the files, and leaves the branch untouched.
 - **Commits.** Whenever a clarity or clarity-validate run pauses, completes, fails or is
-  aborted after changing `.clarity/` or the constitution, compose commits those paths only, on
+  aborted after changing `.clarity/` or `.compose/memory/`, compose commits those paths only, on
   the clarity branch, as `clarity: <mode> run <run id>`. It never commits anything else.
 - **Auto-merge on PASS.** When a run records PASS, compose fast-forwards the local default
   branch to `clarity`. If the default branch moved during the run, it's merged into `clarity`
@@ -183,33 +191,73 @@ Builds branch from the default branch, so they only ever see a foundation that p
   `.clarity/verdict.yml`: `{result, incomplete, fingerprint, run_id, at}`. A verdict is
   **current** while its fingerprint matches the documents.
 - `compose clarity validate` (`POST /repos/{repo}/clarity/validate`) runs `/clarity-validate`
-  as a tracked run, records the verdict and, on PASS, regenerates the constitution if it's out
-  of date, commits and merges. It exits 1 on FAIL.
+  as a tracked run, records the verdict and, on PASS, publishes the memory files, commits
+  and merges. It exits 1 on FAIL.
 - `compose clarity status` shows all of it without a model call: each document's status, the
   verdict and whether it's current, the pending questions, whether the constitution is
   current, the active run, and whether `compose build` would start.
 
-### The generated constitution
+### The published memory
 
-In a clarity repo, `.compose/memory/constitution.md` is generated, not written by hand.
-`/compose-constitution from-clarity` derives its principles from the clarity documents
-(following `.compose/templates/compose/clarity.md`), each citing its source (`[STD-002]`).
-compose stamps its first line with the fingerprint it was generated from:
+`.clarity/` is where the foundation is drafted and approved. Feature work never reads it.
+After a clarity run, compose publishes the foundation to `.compose/memory/`, and that folder
+is the only place the `compose-*` skills read:
+
+- **One file per document**, at the same path (`.compose/memory/goal/requirements.md`). The
+  text is the approved document, unchanged; only the clarity bookkeeping at the top is
+  replaced by a one-line "generated" comment. Documents marked n/a aren't published, and
+  only accepted ADRs are.
+- **`feature-ideas.md`**, from the `## Feature ideas` section of the clarity notes.
+- **A published API spec**, when `contracts/api.md` names one that lives under `.clarity/`.
+- **The index**, `.compose/memory/constitution.md`. It has one row per file: what the file
+  holds (with the rule IDs in it), when to read it, and its standing.
 
 ```text
-<!-- generated-from-clarity: <fingerprint> -->
+<!-- memory-index: <fingerprint> -->
+# Project memory
+
+| File | Holds | Read | Standing |
+|---|---|---|---|
+| goal/requirements.md | The rules every feature must meet… IDs: NFR-001…NFR-014. | always at: specify, clarify, plan, tasks, implement, analyze | binding |
+| product/ux-standards.md | UI rules… | always at: analyze; when: the feature has a user interface | binding |
 ```
 
-The next clarity run overwrites a hand-edited constitution; the file's header says so.
+A feature step reads the index, opens the files that name it under **always at**, and opens
+the others only when their **when** fits the feature. `binding` files (complete documents,
+accepted ADRs) are rules; `draft` files are hints.
+
+What each row says comes from the shipped manifest. A custom document declares its own in
+`.clarity/config.yml`:
+
+```yaml
+documents:
+  ops/runbook.md:
+    # template, required_sections, depends_on … as before
+    memory:
+      summary: "Alerts, on-call steps and how to roll back a release."
+      read_at: [tasks, analyze]        # specify, clarify, plan, tasks, implement, analyze
+      read_when: "the feature changes how the application is deployed or operated"
+```
+
+Publishing is plain copying: it costs nothing and the same documents always give the same
+files. The folder is generated, so don't edit it: change the clarity documents and run
+`compose clarity validate`. compose removes the files it published earlier and no longer
+produces, and leaves alone anything else you keep in the folder.
+
+**Upgrading.** A repo whose constitution was written by an earlier compose (its first line
+is `<!-- generated-from-clarity: … -->`) has no memory files. `compose build` refuses there
+with "The constitution is out of date with clarity"; one `compose clarity validate` run
+publishes the memory and clears it.
 
 ## compose build
 
 ```bash
-compose build "Wishlist for signed-in users" [--workflow id] [-i k=v ...] [--feature NNN-name] [-d]
+compose build "Wishlist for signed-in users" [--workflow id] [-i k=v ...] [--feature NNN-name] [-d] [--auto-approve]
 ```
 
 `compose build` (`POST /repos/{repo}/builds`) runs the default workflow (`defaults.workflow`,
-`automated` unless you change it) on a new feature, with the description as its spec. First
+`automated` unless you change it) on a new feature, with the description as its spec (`compose run` is the same without the shortcut: you name the
+workflow and give every input yourself with `-i`). First
 comes the **pre-run check**, which `compose run` and `POST /repos/{repo}/runs` also apply to
 every feature run. It reads the **local default branch**, the one feature worktrees branch
 from, not your checkout. A repo has **started clarity** when its default branch has
@@ -222,6 +270,11 @@ from, not your checkout. A repo has **started clarity** when its default branch 
 | No verdict, FAIL, or a verdict for other content than the default branch's | Refuses: the foundation doesn't pass (or changed since it was validated). Fix: `compose clarity validate` |
 | The constitution's stamp isn't the default branch's fingerprint | Refuses: the constitution is out of date with clarity. Fix: `compose clarity validate` |
 | All current and PASS | Starts |
+
+`--auto-approve` (`-y`) approves gates and hook confirmations automatically, so a build can
+run unattended (also with `-d`). It takes `approve`, or `install` at the skills gate (the first
+option that isn't `reject`), and prints a `✓ auto-approved` line for each. A gate with no
+`reject` option still waits, and clarity questions still wait for their approver.
 
 A refusal happens before any run exists: exit 1 on the CLI, 409 from the API with
 `problems: [{message, fix}]`. When the local default branch is behind its upstream (as far as
@@ -260,7 +313,7 @@ This is the whole process, as `/clarity interactive` walks through it with you. 
 | 0. Assess | Reads `.clarity/` and works out where things stand. Resumes at the first unfinished step. |
 | 1. Inputs | Reads every supplied document, folder or URL, and scans the code, **once**. Writes an inputs summary (what each source informs, and any conflicts) to `.clarity/notes.md`. |
 | 2. Configure | `clarity-configure` agrees with you which documents are mandatory, which don't apply and why, any custom documents, and who approves what. The result is `.clarity/config.yml`. |
-| 3. Scaffold | Creates only the documents this project needs, from the templates. |
+| 3. Scaffold | Creates only the documents this project needs, from the templates. Documents you removed from the mandatory set are not created. |
 | 4. Infer | Drafts every document your inputs inform. Existing OpenAPI/GraphQL files and database schemas are reused, not retyped. Gaps and conflicts are left as notes to ask about. |
 | 5. Stages | goal → solution → failures → architecture + ADRs → product → technical → summaries. Each stage runs its skills, which ask only about gaps, and then you confirm the whole stage at once. |
 | 6. Recheck | One pass over documents that went stale or were edited, to re-confirm or revise them. |
@@ -285,6 +338,7 @@ what needs a person.
 | `goal/open-questions.md` | clarity-problem | Each question has Status, Strategy, **Blocking** |
 | `solution/solution.md` | clarity-solution | |
 | `failures/failures.md` | clarity-failure-brainstorm → -analysis → -management | Six "thinkers" brainstorm in parallel |
+| `failures/fmea.md` | clarity-fmea | Optional. An FMEA worksheet built from the failure documents: function, failure mode, effect, cause, current controls, severity and recommended action per row. Add it with `mandatory.add` |
 | `solution/architecture.md` | clarity-architecture | System architecture document, with a mermaid threat model |
 | `decisions/index.md` + `ADR-NNN-*.md` | clarity-decision | One file per decision |
 | `product/prd.md` | clarity-prd | Product brief: users, goals `G-###`, scope boundaries, product principles. No features |
@@ -334,6 +388,7 @@ fingerprint. Nothing needs committing for the checks to work.
 `clarity-configure` writes it, and every key is optional:
 
 ```yaml
+setup: dynamic                   # or static; see below
 mandatory:
   add: [ops/runbook.md]
   remove: [product/ux-standards.md]
@@ -351,6 +406,41 @@ approvals:
   decisions/*: [Rui Costa]       # every ADR
 stale_fails: false
 ```
+
+### FMEA
+
+`failures/fmea.md` is the one optional shipped document: a Failure Mode and Effects
+Analysis worksheet, for regulated or safety-related work and audits that expect the classic
+table. It is left out unless the config adds it:
+
+```yaml
+mandatory:
+  add: [failures/fmea.md]
+fmea:
+  scores: false                  # true adds S, O, D and the risk priority number
+```
+
+`clarity-fmea` builds it from the analysed failure modes and their management plans, one
+row per failure mode and cause (`FM-001`, …), each linking its failure document. It adds
+nothing the failure documents don't say; when they change, the worksheet is regenerated.
+Scores are off by default, because the failure skills don't rank by severity times
+likelihood. With `scores: true`, each row is scored 1–10 for severity, occurrence and
+detection, and a person confirms the occurrence and detection scores.
+
+### Setup mode
+
+`setup` says how the list of required documents is decided:
+
+- `dynamic` (the default, also with no file): `/clarity` asks a person first. The setup
+  question lists every document, included or left out, and the person confirms or changes
+  the list. A brief that names the documents only shapes the proposal; it never counts as
+  the answer. The agreed list is written to the file, so later runs ask again only when
+  compose ships a new document.
+- `static`: `/clarity` asks nothing about the setup and follows the file as written. Use it
+  when the list is decided up front, or in a pipeline with nobody to answer.
+
+The file starts as a commented starter with an example for every key, including the full
+list of shipped documents; `clarity-configure` keeps those comments when it edits the file.
 
 ## Validation
 
@@ -388,17 +478,17 @@ Drafts, edited documents and stale documents can't be approved.
 
 ## How compose uses clarity
 
-When a repo has `.clarity/`, the compose skills follow it. `compose feature paths --json`
-reports each document's declared status under `clarity`, and the shared guide
-`.compose/templates/compose/clarity.md` says what each step reads:
+When a repo has a clarity foundation, the compose skills follow its published memory. They
+read the index, and the shared guide `.compose/templates/compose/clarity.md` says how:
 
-| compose step | Takes from clarity |
+| compose step | Takes from the memory files |
 |---|---|
-| `/compose-constitution` | Derives the principles from the NFRs, constraints, standards, product principles, accepted ADRs, application-wide failure mitigations and conventions, citing each source (`[STD-002]`). Re-run it after clarity changes. |
+| `/compose-constitution` | Nothing: the constitution is the generated index, and the skill leaves it alone. |
 | `/compose-specify`, `/compose-clarify` | Actors, goals and scope boundaries. The spec's `Serves:` line cites goals and rules, and it doesn't ask what clarity answers. Its own `FR-###` are per feature. |
 | `/compose-plan` | Stack and components from the architecture and accepted ADRs, which aren't researched again. Contracts, data and screens follow the conventions. A **Clarity check** table sits next to the constitution check. |
 | `/compose-tasks` | Tasks for failure mitigations touching the feature, tests the standards require, and setup steps. |
-| `/compose-analyze` | Flags breaking a binding rule or accepted ADR as critical. |
+| `/compose-implement`, `/compose-converge`, `/compose-bug-fix` | The binding rules (requirements, constraints, standards, accepted ADRs) the code must keep. |
+| `/compose-analyze` | Reads every file. Flags breaking a binding rule or accepted ADR as critical. |
 
 `complete` documents and `accepted` ADRs are binding, drafts are hints, and `n/a` documents are
 skipped. compose never edits `.clarity/`. A conflict is raised (or, in a headless run, recorded

@@ -115,7 +115,7 @@ def remove_repo(
 ) -> Repo:
     """Unregister a repo. Refuses when it has run history, unless ``force``."""
     repo = get_repo(db, ref)
-    runs = db.conn.execute("SELECT COUNT(*) FROM runs WHERE repo_id = ?", (repo.id,)).fetchone()
+    runs = db.execute("SELECT COUNT(*) FROM runs WHERE repo_id = ?", (repo.id,)).fetchone()
     if runs[0] and not force:
         raise RepoError(
             f"{repo.name!r} has {runs[0]} run(s); removing it deletes their history."

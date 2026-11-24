@@ -51,10 +51,18 @@ async def run_engine(
         max_cost_usd=min(caps) if caps else None,
         engine_options=settings.engine_options,
         env={**rc.env(), **(env or {})},
+        transcript=rc.files.transcript(hook_exec_id or step_exec_id or "run"),
     )
     record.engine = settings.engine
     record.model = settings.model
-    rc.emit("engine_started", exec_id=step_exec_id, hook_exec_id=hook_exec_id, task=task.label)
+    rc.emit(
+        "engine_started",
+        exec_id=step_exec_id,
+        hook_exec_id=hook_exec_id,
+        task=task.label,
+        engine=settings.engine,
+        model=settings.model,
+    )
     run = engine.start(task, rc.worktree, options)
     usage = Usage()
     limit_error: str | None = None

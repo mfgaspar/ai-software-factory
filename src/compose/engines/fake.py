@@ -16,6 +16,7 @@ from compose.engines.base import (
     MessageEvent,
     ToolCallEvent,
     ToolResultEvent,
+    Transcript,
     Usage,
     UsageEvent,
 )
@@ -56,14 +57,29 @@ ScriptFor = Callable[[EngineTask, Path, EngineOptions], Script]
 
 
 class FakeRun:
-    def __init__(self, script: Script, cwd: Path) -> None:
+    def __init__(
+        self, script: Script, cwd: Path, transcript: Transcript | None = None, prompt: str = ""
+    ) -> None:
         self.script = script
         self.cwd = cwd
+        self.transcript = transcript or Transcript(None)
+        self.prompt = prompt
         self._stopped = asyncio.Event()
         self._result: EngineResult | None = None
         self._usage = Usage()
 
     async def events(self) -> AsyncIterator[EngineEvent]:
+        # the same shape Claude Code's stream-json transcript has, so traces read alike
+        log = self.transcript.write
+        log(
+            {
+                "type": "compose_task",
+                "transport": "fake",
+                "prompt": self.prompt,
+                "cwd": str(self.cwd),
+            }
+        )
+        log({"type": "system", "subtype": "init", "session_id": self.script.session_id})
         for i, act in enumerate(self.script.actions):
             if self._stopped.is_set():
                 break
@@ -74,9 +90,17 @@ class FakeRun:
                 except TimeoutError:
                     pass
             if act.say is not None:
+                log(
+                    {
+                        "type": "assistant",
+                        "message": {"content": [{"type": "text", "text": act.say}]},
+                    }
+                )
                 yield MessageEvent(act.say)
             if act.tool is not None:
                 call_id = f"call-{i}"
+                use = {"type": "tool_use", "id": call_id, "name": act.tool, "input": act.tool_input}
+                log({"type": "assistant", "message": {"content": [use]}})
                 yield ToolCallEvent(call_id, act.tool, dict(act.tool_input))
                 for rel, content in act.write.items():
                     target = self.cwd / rel
@@ -84,6 +108,13 @@ class FakeRun:
                     target.write_text(content)
                 for rel in act.delete:
                     (self.cwd / rel).unlink(missing_ok=True)
+                result = {
+                    "type": "tool_result",
+                    "tool_use_id": call_id,
+                    "content": act.tool_output,
+                    "is_error": act.tool_error,
+                }
+                log({"type": "user", "message": {"content": [result]}})
                 yield ToolResultEvent(call_id, act.tool_output, act.tool_error, duration_ms=1)
             if act.usage is not None:
                 u = act.usage
@@ -108,6 +139,17 @@ class FakeRun:
             self._result = EngineResult(
                 "completed", self._usage, self.script.session_id, self.script.final_text
             )
+        log(
+            {
+                "type": "result",
+                "subtype": self._result.status,
+                "is_error": self._result.status != "completed",
+                "num_turns": self._usage.turns,
+                "total_cost_usd": self._usage.cost_usd,
+                "result": self._result.final_text,
+                "errors": [self._result.error] if self._result.error else [],
+            }
+        )
 
     @property
     def result(self) -> EngineResult:
@@ -144,7 +186,7 @@ class FakeEngine:
             script = self.scripts(task, cwd, options)
         else:
             script = self.scripts.get(task.text, self.default)
-        return FakeRun(script, cwd)
+        return FakeRun(script, cwd, Transcript(options.transcript), task.label)
 
     def install(self, path: Path, *, worktree: bool = False) -> list[Path]:
         return []

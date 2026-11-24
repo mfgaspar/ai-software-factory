@@ -18,7 +18,10 @@ from compose.tracking.snapshot import EXCLUDED
 CONSTITUTION = Path(".compose") / "memory" / "constitution.md"
 GITIGNORE_HEADER = "# compose: local state"
 GITIGNORE_ENTRIES = [f"/{p}/" for p in EXCLUDED]
-MARKER_SKILL = Path(".claude") / "skills" / "compose-specify" / "SKILL.md"
+MARKER_SKILLS = (
+    Path(".claude") / "skills" / "compose-specify" / "SKILL.md",
+    Path(".github") / "skills" / "compose-specify" / "SKILL.md",
+)
 
 
 @dataclass
@@ -107,7 +110,8 @@ def check_all(db: Database, cwd: Path, engines: EngineRegistry, engine: str) -> 
     try:
         adapter = engines.get(engine)
     except Exception as exc:  # unknown engine name
-        items.append(CheckItem(f"engine {engine}", False, str(exc), "use --engine claude"))
+        fix = f"use --engine {' or '.join(engines.names())}"
+        items.append(CheckItem(f"engine {engine}", False, str(exc), fix))
     else:
         problems = adapter.check()
         items.append(
@@ -141,10 +145,10 @@ def check_all(db: Database, cwd: Path, engines: EngineRegistry, engine: str) -> 
             "repository registered",
             repo is not None,
             f"{root}" + (f" as {repo.name} ({repo.id})" if repo else " is not registered"),
-            None if repo else "run `compose init --engine claude` here",
+            None if repo else "run `compose init` here",
         )
     )
-    initialized = (root / MARKER_SKILL).exists() and (root / CONSTITUTION).exists()
+    initialized = any((root / m).exists() for m in MARKER_SKILLS) and (root / CONSTITUTION).exists()
     items.append(
         CheckItem(
             "repository initialized",
@@ -152,7 +156,7 @@ def check_all(db: Database, cwd: Path, engines: EngineRegistry, engine: str) -> 
             "skills and constitution present"
             if initialized
             else "compose skills or the constitution are missing in this checkout",
-            None if initialized else "run `compose init --engine claude` here",
+            None if initialized else "run `compose init` here",
             # runs install the skills into their worktrees anyway
             required=False,
         )

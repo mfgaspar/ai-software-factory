@@ -2,10 +2,10 @@ schema_version: "1.0"
 workflow:
   id: automated
   name: Compose Build Automated Flow
-  version: 1.3.0
+  version: 1.5.0
   author: gaspar
   description: >
-    Chains specify, clarify, plan, find-skills (optional), tasks, analyze, implement and
+    Chains specify, clarify, plan, find-skills, tasks, analyze, implement and
     converge into one guided run with a clarify gate and a post-implement convergence loop.
     The default workflow for compose run.
 inputs:
@@ -32,10 +32,11 @@ inputs:
     description: What the checklist covers (e.g. security, ux, api).
   with_skills:
     type: boolean
-    default: false
+    default: true
     description: >
       After planning, look for published agent skills that fit the plan's stack
       (needs Node.js and network access) and offer to install them into the worktree.
+      On by default; pass with_skills=false to leave the step out.
   review_skills_verdict:
     type: string
     default: ""
@@ -116,37 +117,71 @@ steps:
         input:
           args: >
             skills that would help build what {{ context.feature.dir }}/plan.md describes
-            (its stack, libraries, test and build tools). Do not install anything. Write
+            (its stack, libraries, test and build tools). Suggest only skills about that
+            stack. Leave out any skill that sets how the work is done (test-driven or
+            behaviour-driven development, test-first, planning, specification,
+            brainstorming, review or git workflows): this project is spec-driven and
+            compose's own steps decide that. Do not install anything. Write
             your verified suggestions to {{ context.feature.dir }}/skills.md: for each,
             what it does, its install count and source; then a section "## Install" with
-            one line per skill worth installing, exactly `npx skills add owner/repo@skill`
+            one line per skill worth installing, exactly
+            `npx skills add owner/repo@skill # what it is for, in a few words`
             and nothing else on the line. Leave that section empty if none qualify.
-      - id: skills-gate
-        type: gate
-        message: >
-          Review the suggested skills in {{ context.feature.dir }}/skills.md. Install the
-          ones under "## Install" into this feature's worktree?
-        verdict_input: review_skills_verdict
-        options: [install, reject]
-        on_reject: skip
-      - id: skills-install-check
+      # The skills the gate will list: only well-formed owner/repo[@skill] names, each
+      # with its reason. Prints nothing when there is nothing to install. A skill named
+      # for test-driven or behaviour-driven development is dropped even if suggested:
+      # the project is spec-driven, and such a skill would fight compose's own steps.
+      - id: skills-list
+        type: shell
+        strict: true
+        continue_on_error: true
+        env:
+          SKILLS_FILE: "{{ context.feature.dir }}/skills.md"
+          PROCESS_SKILLS: "(^|[^a-z])(tdd|bdd)([^a-z]|$)|test-driven|behaviou?r-driven|test-first"
+        run: |
+          [ -f "$SKILLS_FILE" ] || exit 0
+          pkg='([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(@[A-Za-z0-9_.:-]+)?)'
+          list=$(awk -v skip="$PROCESS_SKILLS" 'tolower($4) !~ skip' "$SKILLS_FILE" | sed -nE \
+            -e "s|^npx skills add $pkg[[:space:]]*\$|  - \\1|p" \
+            -e "s|^npx skills add $pkg[[:space:]]+#[[:space:]]*(.{0,120}).*\$|  - \\1: \\3|p")
+          printf '%s' "$list"
+      # No gate when nothing was suggested: there is nothing to decide.
+      - id: skills-found
         type: if
-        condition: "{{ steps.skills-gate.output.choice == 'install' }}"
+        condition: "{{ steps.skills-list.output.stdout != '' }}"
         then:
-          - id: skills-install
-            type: shell
-            strict: true
-            continue_on_error: true
-            env:
-              SKILLS_FILE: "{{ context.feature.dir }}/skills.md"
-            # only well-formed owner/repo[@skill] names reach npx, one at a time
-            run: |
-              pkgs=$(sed -nE 's#^npx skills add ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(@[A-Za-z0-9_.:-]+)?)$#\1#p' "$SKILLS_FILE")
-              if [ -z "$pkgs" ]; then echo "no skills to install in $SKILLS_FILE"; exit 0; fi
-              for pkg in $pkgs; do
-                echo "installing $pkg"
-                npx --yes skills add "$pkg" -a claude-code -y || exit 1
-              done
+          - id: skills-gate
+            type: gate
+            message: |
+              Install these skills into this feature's worktree?
+              {{ steps.skills-list.output.stdout }}
+              What each one does: {{ context.feature.dir }}/skills.md
+            verdict_input: review_skills_verdict
+            options: [install, reject]
+            on_reject: skip
+          - id: skills-install-check
+            type: if
+            condition: "{{ steps.skills-gate.output.choice == 'install' }}"
+            then:
+              - id: skills-install
+                type: shell
+                strict: true
+                continue_on_error: true
+                env:
+                  SKILLS_FILE: "{{ context.feature.dir }}/skills.md"
+                  PROCESS_SKILLS: "(^|[^a-z])(tdd|bdd)([^a-z]|$)|test-driven|behaviou?r-driven|test-first"
+                  ENGINE: "{{ context.engine }}"
+                # only well-formed owner/repo[@skill] names reach npx, one at a time, and
+                # never a test-driven or behaviour-driven development skill
+                run: |
+                  # install for the engine that will use them (Copilot reads .github/skills)
+                  case "$ENGINE" in copilot) agent=github-copilot ;; *) agent=claude-code ;; esac
+                  pkgs=$(awk -v skip="$PROCESS_SKILLS" 'tolower($4) !~ skip' "$SKILLS_FILE" | sed -nE 's|^npx skills add ([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(@[A-Za-z0-9_.:-]+)?)([[:space:]]+#.*)?[[:space:]]*$|\1|p')
+                  if [ -z "$pkgs" ]; then echo "no skills to install in $SKILLS_FILE"; exit 0; fi
+                  for pkg in $pkgs; do
+                    echo "installing $pkg"
+                    npx --yes skills add "$pkg" -a "$agent" -y || exit 1
+                  done
 
   - id: checklist
     type: if

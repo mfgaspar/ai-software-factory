@@ -120,8 +120,36 @@ def test_starter_config_is_valid_and_names_real_documents() -> None:
     known = set(DOCUMENTS) | {"ops/runbook.md"}  # the example custom document
     for path in re.findall(r"(?<![\w./-])[a-z-]+/[a-z-]+\.md\b", example):
         assert path in known, path
-    for key in ("mandatory", "not_applicable", "documents", "approvals", "stale_fails"):
+    for key in ("setup", "mandatory", "not_applicable", "documents", "approvals", "stale_fails"):
         assert f"# {key}:" in text
+    for path in DOCUMENTS:  # the starter lists every shipped document
+        assert f"#   {path} " in text, path
+
+
+def test_fmea_is_optional_and_built_from_the_failure_documents() -> None:
+    entry = DOCUMENTS["failures/fmea.md"]
+    assert entry["mandatory"] is False and entry["depends_on"] == ["failures/failures.md"]
+    optional = [path for path, doc in DOCUMENTS.items() if not doc["mandatory"]]
+    assert optional == ["failures/fmea.md"]
+    config = (TEMPLATES / "config.yml").read_text()
+    assert "#   add: [failures/fmea.md]" in config and "#   scores: false" in config
+    fmea = skill_body("clarity-fmea")
+    for key in ("fmea.scores", "mandatory.add", "FM-001", "never renumber", "S × O × D"):
+        assert key in fmea, key
+    assert "`mandatory: false`" in skill_body("clarity")
+    assert "`mandatory: false`" in skill_body("clarity-validate")
+    assert "failures/fmea.md" in skill_body("clarity-configure")
+
+
+def test_setup_is_asked_unless_the_config_is_static() -> None:
+    text = (TEMPLATES / "config.yml").read_text()
+    assert "# setup: dynamic" in text and "dynamic (default)" in text and "static " in text
+    configure = skill_body("clarity-configure")
+    for key in ("`setup: static`", "**dynamic**", "never the agreement", "checklist of"):
+        assert key in configure, key
+    assert "leave every explanatory comment and example in place" in configure
+    clarity = skill_body("clarity")
+    assert "Raise it even when a brief" in clarity and "`setup: static`" in clarity
 
 
 # --------------------------------------------------------------------- body hash
@@ -259,8 +287,6 @@ def test_ported_skill_keeps_its_license(skill: str) -> None:
     folder = SKILLS / skill
     license_text = (folder / "LICENSE.txt").read_text()
     assert "MIT License" in license_text and "Microsoft Corporation" in license_text
-    body = (folder / "SKILL.md").read_text()
-    assert "LICENSE.txt" in body and "microsoft/clarity-agent" in body
 
 
 @pytest.mark.parametrize("skill", SHIPPED_CLARITY)
@@ -358,25 +384,31 @@ def test_clarity_holds_no_feature_level_what() -> None:
         assert prefix in requirements
 
 
-COMPOSE_STEPS = (
-    "compose-constitution",
-    "compose-specify",
-    "compose-clarify",
-    "compose-plan",
-    "compose-tasks",
-    "compose-analyze",
-)
+MEMORY_READERS = {
+    "compose-specify": "specify",
+    "compose-clarify": "clarify",
+    "compose-plan": "plan",
+    "compose-tasks": "tasks",
+    "compose-implement": "implement",
+    "compose-converge": "implement",
+    "compose-bug-fix": "implement",
+    "compose-analyze": "analyze",
+}
 
 
 def test_compose_steps_follow_clarity() -> None:
     guide = ASSETS / "templates" / "compose" / "clarity.md"
     text = guide.read_text()
-    for step in ("constitution", "specify", "plan", "tasks", "analyze"):
+    assert "memory-index" in text and "always at" in text
+    for step in ("plan", "tasks", "implement", "analyze"):
         assert f"| {step} |" in text
-    for name in COMPOSE_STEPS:
+    for name in MEMORY_READERS:
         body = (ASSETS / "skills" / name / "SKILL.md").read_text()
-        assert "clarity" in body.lower(), name
-        assert "clarity.md" in body or "clarity.guide" in body, name
+        assert "memory index" in body and "<!-- memory-index: … -->" in body, name
+        assert ".compose/templates/compose/clarity.md" in body, name
+        # feature work reads .compose/memory/ only: never the clarity workshop
+        assert ".clarity" not in body and "clarity.guide" not in body, name
+        assert f"`{MEMORY_READERS[name]}` step" in body or name == "compose-analyze", name
     assert "**Serves**" in (ASSETS / "templates" / "compose" / "spec.md").read_text()
     assert "### Clarity check" in (ASSETS / "templates" / "compose" / "plan.md").read_text()
 
@@ -399,6 +431,10 @@ def test_orchestrator_modes_and_phases() -> None:
     assert "COMPOSE_RUN_ID" in body and "never ask anything" in body
     assert "**4** rounds" in body
     assert "only** from a recorded `confirm` review answer" in body
+    # every open item is asked in the draft round, never found after the review
+    assert "Raise them all now, in this round" in body
+    assert "raise those as `gap` questions instead and no\n   review this round" in body
+    assert 'Never write "(recommended)" into an option' in body
 
 
 def test_questions_file_is_a_companion() -> None:
@@ -416,9 +452,58 @@ def test_skills_know_the_questions_file() -> None:
         assert "answered_by" in body and "answered_at" in body, skill
 
 
-def test_constitution_from_clarity() -> None:
+def test_constitution_skill_leaves_a_generated_index_alone() -> None:
     body = (SKILLS / "compose-constitution" / "SKILL.md").read_text()
-    assert "from-clarity" in body
-    assert "Never ask questions" in body
-    assert "generated-from-clarity" in body and "Never write or compute that" in body
-    assert "from-clarity" in (ASSETS / "templates" / "compose" / "clarity.md").read_text()
+    assert "If it is generated, stop" in body
+    assert "<!-- memory-index: … -->" in body and "generated-from-clarity" in body
+    assert "## `from-clarity`" not in body and "Never edit `.clarity/`" not in body
+
+
+def test_every_document_says_what_it_holds_and_when_to_read_it() -> None:
+    from compose.clarity.memory import STEPS
+
+    for path, entry in DOCUMENTS.items():
+        block = entry["memory"]
+        assert block["summary"].strip().endswith("."), path
+        assert block["read_at"] and set(block["read_at"]) <= set(STEPS), path
+        assert "analyze" in block["read_at"], path  # the backstop reads everything
+        assert block["read_at"] != ["analyze"] or block["read_when"], path
+    extras = MANIFEST["memory"]
+    assert extras["adr"]["read_when"] and extras["feature_ideas"]["read_at"] == ["specify"]
+    config = (TEMPLATES / "config.yml").read_text()
+    assert "#     memory:" in config and "read_when" in config
+    assert "`read_at`" in skill_body("clarity-configure")
+
+
+def test_no_builtin_workflow_runs_the_old_constitution_step() -> None:
+    builtins = ASSETS.parent / "workflows" / "builtins"
+    for name in ("clarity", "clarity-validate"):
+        text = (builtins / name / "workflow.yml").read_text()
+        assert "action: publish-memory" in text, name
+        assert "stamp-constitution" not in text and "compose-constitution" not in text, name
+
+
+def test_skills_ask_a_person_only_what_needs_one() -> None:
+    body = skill_body("clarity")
+    assert "## Ask a person only what needs a person" in body
+    assert "fill every gap you can answer yourself" in body
+    for name in (
+        "clarity-api-contracts",
+        "clarity-architecture",
+        "clarity-data-model",
+        "clarity-decision",
+        "clarity-discovery-prototype",
+        "clarity-discovery-research",
+        "clarity-failure-analysis",
+        "clarity-failure-management",
+        "clarity-fmea",
+        "clarity-message",
+        "clarity-prd",
+        "clarity-problem",
+        "clarity-setup-guide",
+        "clarity-solution",
+        "clarity-ux-standards",
+    ):
+        skill = skill_body(name)
+        assert "## Questions" in skill, name
+        assert "Ask a person only what a person must answer" in skill, name

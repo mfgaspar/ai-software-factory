@@ -105,35 +105,7 @@ CREATE TABLE hook_execs (
 CREATE INDEX hook_execs_step_idx ON hook_execs (step_exec_id);
 CREATE INDEX hook_execs_run_idx ON hook_execs (run_id);
 
-CREATE TABLE actions (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id          TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-    step_exec_id    TEXT REFERENCES step_execs(id) ON DELETE CASCADE,
-    hook_exec_id    TEXT REFERENCES hook_execs(id) ON DELETE CASCADE,
-    seq             INTEGER NOT NULL,        -- order within the run
-    kind            TEXT NOT NULL,           -- message | tool_call | tool_result | usage_update
-    tool_name       TEXT,
-    input_summary   TEXT,
-    result_summary  TEXT,
-    is_error        INTEGER NOT NULL DEFAULT 0,
-    duration_ms     INTEGER,
-    ts              TEXT NOT NULL,
-    UNIQUE (run_id, seq)
-);
-CREATE INDEX actions_step_idx ON actions (step_exec_id, seq);
-
-CREATE TABLE file_changes (
-    id              INTEGER PRIMARY KEY AUTOINCREMENT,
-    run_id          TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-    step_exec_id    TEXT NOT NULL REFERENCES step_execs(id) ON DELETE CASCADE,
-    hook_exec_id    TEXT REFERENCES hook_execs(id) ON DELETE CASCADE,
-    path            TEXT NOT NULL,
-    old_path        TEXT,
-    status          TEXT NOT NULL CHECK (status IN ('A','M','D','R','C','T')),
-    added           INTEGER,                 -- NULL for binary files
-    removed         INTEGER
-);
-CREATE INDEX file_changes_step_idx ON file_changes (step_exec_id);
+-- Detailed logs (actions, file changes) are not stored here: they live in the run folder.
 
 CREATE TABLE locks (
     key             TEXT PRIMARY KEY,        -- e.g. "feature:<feature_id>"

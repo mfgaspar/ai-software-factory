@@ -51,3 +51,42 @@ def ensure_feature_worktree(db: Database, home: Home, repo: Repo, feature: Featu
         feature.worktree_path = str(path)
         store.update(db, feature)
     return path
+
+
+def commit_all(worktree: Path, message: str) -> str | None:
+    """Commit every change in a feature worktree (what ``.gitignore`` and the engines'
+    hidden files leave out stays out); return the new sha, or None when nothing changed."""
+    if not git.changed_paths(worktree):
+        return None
+    git.git(worktree, "add", "-A")
+    if not git.changed_paths(worktree):
+        return None
+    git.git(worktree, "commit", "--quiet", "--no-verify", "-m", message)
+    return git.rev_parse(worktree, "HEAD")
+
+
+def merge_into_default(repo: Repo, branch: str) -> str | None:
+    """Fast-forward the repo's default branch to ``branch``, so a finished feature shows in
+    the repo's own folder. Returns None when the default branch now holds the work, or the
+    reason it doesn't.
+
+    Only a fast-forward: when the default branch moved since the feature started, or its
+    checkout has changes the merge would overwrite, nothing is merged. It never pushes.
+    """
+    repo_path = Path(repo.path)
+    try:
+        base = repo.default_branch or git.default_branch(repo_path)
+        target, old = git.rev_parse(repo_path, branch), git.rev_parse(repo_path, base)
+        if target == old or git.is_ancestor(repo_path, branch, base):
+            return None
+        if not git.is_ancestor(repo_path, base, branch):
+            return f"{base} changed since the feature started"
+        checkout = next((wt for wt in git.worktree_list(repo_path) if wt.branch == base), None)
+        if checkout is None:
+            git.update_ref(repo_path, base, target, old)
+        else:
+            git.merge(checkout.path, branch, ff_only=True)
+    except git.GitError as exc:
+        lines = [line.strip() for line in str(exc).splitlines() if line.strip()]
+        return lines[-1] if lines else "git refused the merge"
+    return None
